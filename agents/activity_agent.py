@@ -1,8 +1,9 @@
-"""Activity Agent specializing in experience curation and point-of-interest discovery using mock data."""
+"""Activity Agent curating local experiences and points of interest via Maps MCP Server."""
 
 from typing import Dict, Any, List
 from graph.state import TravelState
 from models.specialized_options import ActivityOption
+from mcp.client import MCPClient
 from agents.base_agent import execute_agent_safely
 
 
@@ -19,7 +20,6 @@ def generate_mock_activities(
 
     cost_low = 25.0 if curr == "USD" else (2000.0 if curr == "INR" else 22.0)
     cost_med = 65.0 if curr == "USD" else (5000.0 if curr == "INR" else 60.0)
-    cost_free = 0.0
 
     if "tokyo" in dest_lower or "japan" in dest_lower:
         items.append(
@@ -141,26 +141,111 @@ def generate_mock_activities(
 
 
 def activity_agent_node(state: TravelState) -> Dict[str, Any]:
-    """LangGraph node executing Activity Agent logic."""
+    """LangGraph node executing Activity Agent reasoning through Maps MCP tools."""
     def _action() -> Dict[str, Any]:
-        destination = state.get("destination") or "Destination City"
-        interests = state.get("interests") or []
-        currency = state.get("currency") or "USD"
+        destination = state.get("destination") or "Tokyo"
+        interests = state.get("interests") or ["Culture"]
+        currency = str(state.get("currency") or "USD").upper()
+        is_demo = state.get("is_demo", True)
 
-        activities = generate_mock_activities(
+        tool_calls: List[Dict[str, Any]] = []
+
+        fallback_acts = generate_mock_activities(
             destination=destination,
             interests=interests,
             currency=currency,
         )
+
+        # 1. Invoke Maps MCP: search_places
+        places_res = MCPClient.call_tool(
+            agent_name="activity",
+            tool_name="search_places",
+            arguments={
+                "query": "historic landmarks, cultural sites & museums",
+                "location": destination,
+                "limit": 4,
+            },
+            is_demo=is_demo,
+        )
+
+        activities: List[Dict[str, Any]] = []
+
+        if places_res.success and places_res.data:
+            tool_calls.append({
+                "tool_name": "search_places",
+                "agent": "activity",
+                "status": "SUCCESS",
+                "latency_ms": places_res.latency_ms,
+                "mode": places_res.mode,
+            })
+
+            places = places_res.data.get("places", [])
+            for idx, p in enumerate(places):
+                # 2. Invoke Maps MCP: estimate_travel_time
+                tt_res = MCPClient.call_tool(
+                    agent_name="activity",
+                    tool_name="estimate_travel_time",
+                    arguments={
+                        "origin": f"{destination} City Center",
+                        "destination": p.get("location", destination),
+                        "mode": "transit",
+                    },
+                    is_demo=is_demo,
+                )
+                if tt_res.success and tt_res.data:
+                    tool_calls.append({
+                        "tool_name": "estimate_travel_time",
+                        "agent": "activity",
+                        "status": "SUCCESS",
+                        "latency_ms": tt_res.latency_ms,
+                        "mode": tt_res.mode,
+                    })
+
+                slot = "Morning (09:30 - 12:00)" if idx % 2 == 0 else "Afternoon (14:00 - 16:30)"
+                cost = 25.0 if currency == "USD" else (2000.0 if currency == "INR" else 22.0)
+                if idx == 0:
+                    cost = 0.0
+
+                activities.append(
+                    ActivityOption(
+                        name=p.get("name", f"{destination} Heritage Site"),
+                        location=p.get("location", destination),
+                        category=p.get("category", "Culture & Heritage"),
+                        duration=f"{p.get('estimated_time_spent_hours', 2.0)} hours",
+                        estimated_cost=cost,
+                        currency=currency,
+                        best_time=slot,
+                        description=f"Curated experience in {destination} featuring authentic architecture and cultural heritage.",
+                        source="[DEMO_DATA] Maps MCP Server (Mock Places Directory)",
+                        demo_data=True,
+                    ).model_dump()
+                )
+        else:
+            err_msg = places_res.error.message if places_res.error else "Place search failed"
+            tool_calls.append({
+                "tool_name": "search_places",
+                "agent": "activity",
+                "status": "FAILED",
+                "error": err_msg,
+                "mode": places_res.mode,
+            })
+            activities = [a.model_dump() for a in fallback_acts]
+
+        if len(activities) < 3:
+            for fallback_item in fallback_acts:
+                if not any(a["name"] == fallback_item.name for a in activities):
+                    activities.append(fallback_item.model_dump())
+
         return {
-            "activities": [a.model_dump() for a in activities],
+            "activities": activities,
+            "tool_calls": tool_calls,
         }
 
     delta, run_record = execute_agent_safely(
         agent_name="activity",
         action=_action,
         step=state.get("graph_step_count", 1) + 1,
-        is_demo=True,
+        is_demo=state.get("is_demo", True),
     )
     delta["agent_runs"] = [run_record]
     return delta

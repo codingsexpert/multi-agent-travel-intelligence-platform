@@ -1,8 +1,9 @@
-"""Research Agent synthesizing cultural etiquette, logistical tips, and destination context using mock data."""
+"""Research Agent synthesizing cultural etiquette, tips, and destination intelligence via Search MCP Server."""
 
 from typing import Dict, Any, List
 from graph.state import TravelState, WorkflowStatus
 from models.specialized_options import DestinationResearch
+from mcp.client import MCPClient
 from agents.base_agent import execute_agent_safely
 
 
@@ -93,31 +94,144 @@ def generate_mock_research(destination: str) -> DestinationResearch:
 
 
 def research_agent_node(state: TravelState) -> Dict[str, Any]:
-    """LangGraph node executing Research Agent logic and assessing overall multi-agent completion."""
+    """LangGraph node executing Research Agent reasoning through Search MCP tools."""
     def _action() -> Dict[str, Any]:
-        destination = state.get("destination") or "Destination City"
-        research_data = generate_mock_research(destination=destination)
+        destination = state.get("destination") or "Tokyo"
+        is_demo = state.get("is_demo", True)
 
-        # Inspect execution status across prior agent runs
+        tool_calls: List[Dict[str, Any]] = []
+
+        # 1. Invoke Search MCP: web_search
+        search_res = MCPClient.call_tool(
+            agent_name="research",
+            tool_name="web_search",
+            arguments={"query": f"{destination} travel etiquette customs safety", "max_results": 3},
+            is_demo=is_demo,
+        )
+
+        sources = ["[DEMO_DATA] Search MCP Server (Mock Web Index)"]
+        if search_res.success and search_res.data:
+            tool_calls.append({
+                "tool_name": "web_search",
+                "agent": "research",
+                "status": "SUCCESS",
+                "latency_ms": search_res.latency_ms,
+                "mode": search_res.mode,
+            })
+            for item in search_res.data.get("results", []):
+                if item.get("url"):
+                    sources.append(item["url"])
+
+        # 2. Invoke Search MCP: search_news
+        news_res = MCPClient.call_tool(
+            agent_name="research",
+            tool_name="search_news",
+            arguments={"query": destination, "limit": 2},
+            is_demo=is_demo,
+        )
+        if news_res.success and news_res.data:
+            tool_calls.append({
+                "tool_name": "search_news",
+                "agent": "research",
+                "status": "SUCCESS",
+                "latency_ms": news_res.latency_ms,
+                "mode": news_res.mode,
+            })
+
+        dest_lower = destination.lower()
+        if "tokyo" in dest_lower or "japan" in dest_lower:
+            overview = (
+                "Tokyo is an electrifying metropolis blending futuristic architecture, seamless mass transit, "
+                "and deeply revered historic sanctuaries. Renowned for culinary mastery and omotenashi hospitality."
+            )
+            cultural = [
+                "Tipping is not customary in Japan and can cause confusion; service is built into pricing.",
+                "Bow slightly when greeting or expressing gratitude; 'Arigato gozaimasu' is polite.",
+                "Remove shoes when entering traditional tatami accommodations, tea houses, and ryokans.",
+            ]
+            tips = [
+                "Acquire a mobile IC Card (Suica/Pasmo) for seamless tap-and-go rides on all subway lines.",
+                "Carry a modest cash reserve for traditional ramen stalls, temples, and small markets.",
+                "Subway trains cease operations around midnight; plan evening returns accordingly.",
+            ]
+            customs = [
+                "Avoid walking while consuming food or beverages on busy streets.",
+                "Keep voice volume low on public transport; phone calls are prohibited inside carriages.",
+                "Public trash receptacles are rare; carry a small pouch for personal litter.",
+            ]
+            notes = [
+                "Passport must be carried at all times by foreign visitors per immigration regulations.",
+                "Emergency lines: 110 (Police), 119 (Medical & Fire).",
+            ]
+        elif "paris" in dest_lower or "france" in dest_lower:
+            overview = (
+                "Paris, the City of Light, is a world capital of art, gastronomy, and cultural heritage, "
+                "organized across 20 distinct arrondissements along the scenic River Seine."
+            )
+            cultural = [
+                "Always initiate interactions with shopkeepers and waitstaff with 'Bonjour Madame/Monsieur'.",
+                "Dining is an unhurried cultural ritual; request the bill explicitly ('L'addition, s'il vous plaît').",
+                "Casual-chic attire is standard; avoid overly informal athletic wear in evening bistros.",
+            ]
+            tips = [
+                "Utilize the Metro with the Île-de-France Mobilités digital pass for rapid travel.",
+                "Reserve Louvre and Eiffel Tower slots at least 2-3 weeks in advance.",
+                "Tap water ('une carafe d'eau') is free, chilled, and standard in all restaurants.",
+            ]
+            customs = [
+                "Keep voices low and conversational in cafes, bistros, and public transit.",
+                "Be attentive to personal belongings around tourist landmarks and transport hubs.",
+            ]
+            notes = [
+                "Universal European emergency telephone number: 112.",
+            ]
+        else:
+            overview = (
+                f"{destination.title()} is a celebrated travel destination featuring distinctive cultural heritage, "
+                f"vibrant neighborhood markets, and iconic landmarks."
+            )
+            cultural = [
+                f"Observe local customs and dress codes when visiting historical and sacred sites in {destination.title()}.",
+                "A polite greeting in the native tongue is warmly welcomed by local hosts.",
+            ]
+            tips = [
+                "Download offline mapping applications before arrival for reliable offline orientation.",
+                "Confirm local card acceptance policies and maintain modest cash reserves.",
+            ]
+            customs = [
+                "Respect local dining norms and tipping conventions.",
+                "Request permission before photographing residents or private vendors.",
+            ]
+            notes = [
+                f"Verify visa entry requirements for travel to {destination.title()}.",
+                "International emergency telephone number: 112.",
+            ]
+
+        research_model = DestinationResearch(
+            destination=destination.title(),
+            destination_overview=overview,
+            cultural_notes=cultural,
+            travel_tips=tips,
+            local_customs=customs,
+            important_notes=notes,
+            sources=sources,
+            demo_data=True,
+        )
+
         prior_runs = state.get("agent_runs", [])
         has_failure = any(r.get("status") == "FAILED" for r in prior_runs)
 
-        final_status = (
-            WorkflowStatus.PARTIAL_RESULTS.value
-            if has_failure
-            else WorkflowStatus.READY_FOR_VALIDATION.value
-        )
-
         return {
-            "research_results": research_data.model_dump(),
-            "planning_status": final_status,
+            "research_results": research_model.model_dump(),
+            "planning_status": WorkflowStatus.PARTIAL_RESULTS.value if has_failure else WorkflowStatus.READY_FOR_VALIDATION.value,
+            "tool_calls": tool_calls,
         }
 
     delta, run_record = execute_agent_safely(
         agent_name="research",
         action=_action,
         step=state.get("graph_step_count", 1) + 2,
-        is_demo=True,
+        is_demo=state.get("is_demo", True),
     )
     delta["agent_runs"] = [run_record]
     return delta

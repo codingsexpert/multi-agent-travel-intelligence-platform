@@ -89,9 +89,23 @@ class BudgetEngine:
             cat_totals[item.category] = round(cat_totals[item.category] + item_total, 2)
 
             if item.currency.upper() != currency.upper():
+                rate_str = ""
+                try:
+                    from mcp.client import MCPClient
+                    fx_res = MCPClient.call_tool(
+                        agent_name="budget",
+                        tool_name="get_exchange_rate",
+                        arguments={"base_currency": item.currency, "target_currency": currency},
+                    )
+                    if fx_res.success and fx_res.data:
+                        rate = fx_res.data.get("exchange_rate", 1.0)
+                        rate_str = f" (Benchmark Rate: 1 {item.currency.upper()} = {rate} {currency.upper()})"
+                except Exception:
+                    pass
+
                 warning_msg = (
                     f"Currency mismatch detected for '{item.description}': "
-                    f"item currency is '{item.currency}' but trip currency is '{currency}'. "
+                    f"item currency is '{item.currency}' but trip currency is '{currency}'.{rate_str} "
                     f"{BudgetEngine.CURRENCY_DISCLAIMER}"
                 )
                 warnings.append(warning_msg)

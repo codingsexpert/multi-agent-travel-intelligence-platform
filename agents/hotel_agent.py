@@ -1,8 +1,9 @@
-"""Hotel Agent specializing in accommodation discovery and lodging evaluation using mock data."""
+"""Hotel Agent discovering lodging options via Hotel MCP Server."""
 
 from typing import Dict, Any, List
 from graph.state import TravelState
 from models.specialized_options import HotelOption
+from mcp.client import MCPClient
 from agents.base_agent import execute_agent_safely
 
 
@@ -70,30 +71,78 @@ def generate_mock_hotels(
 
 
 def hotel_agent_node(state: TravelState) -> Dict[str, Any]:
-    """LangGraph node executing Hotel Agent logic."""
+    """LangGraph node executing Hotel Agent reasoning through the Hotel MCP gateway."""
     def _action() -> Dict[str, Any]:
-        destination = state.get("destination") or "Destination City"
-        duration = state.get("duration") or 5
-        travelers = state.get("travelers") or 1
-        currency = state.get("currency") or "USD"
-        preference = state.get("accommodation_preference") or "Hotel"
+        destination = state.get("destination") or "Tokyo"
+        start_date = str(state.get("start_date") or "2026-11-01")[:10]
+        end_date = str(state.get("end_date") or "2026-11-06")[:10]
+        duration = int(state.get("duration") or 5)
+        travelers = max(int(state.get("travelers") or 1), 1)
+        currency = str(state.get("currency") or "USD").upper()
+        budget = float(state.get("budget")) if state.get("budget") is not None else None
+        pref = state.get("accommodation_preference") or "Hotel"
+        is_demo = state.get("is_demo", True)
 
-        hotels = generate_mock_hotels(
+        tool_calls: List[Dict[str, Any]] = []
+
+        fallback_hotels = generate_mock_hotels(
             destination=destination,
             duration=duration,
             travelers=travelers,
             currency=currency,
-            preference=preference,
+            preference=pref,
         )
+
+        # Invoke Hotel MCP: search_hotels
+        search_res = MCPClient.call_tool(
+            agent_name="hotel",
+            tool_name="search_hotels",
+            arguments={
+                "destination": destination,
+                "check_in": start_date,
+                "check_out": end_date,
+                "travellers": travelers,
+                "rooms": 1,
+                "budget": budget,
+                "currency": currency,
+                "preferences": [pref],
+            },
+            is_demo=is_demo,
+        )
+
+        if not search_res.success or not search_res.data:
+            err_msg = search_res.error.message if search_res.error else "Hotel search failed"
+            tool_calls.append({
+                "tool_name": "search_hotels",
+                "agent": "hotel",
+                "status": "FAILED",
+                "error": err_msg,
+                "mode": search_res.mode,
+            })
+            hotels = [h.model_dump() for h in fallback_hotels]
+        else:
+            hotels = search_res.data.get("hotels", [])
+            if not hotels:
+                hotels = [h.model_dump() for h in fallback_hotels]
+            tool_calls.append({
+                "tool_name": "search_hotels",
+                "agent": "hotel",
+                "status": "SUCCESS",
+                "latency_ms": search_res.latency_ms,
+                "mode": search_res.mode,
+                "items_returned": len(hotels),
+            })
+
         return {
-            "hotel_options": [h.model_dump() for h in hotels],
+            "hotel_options": hotels,
+            "tool_calls": tool_calls,
         }
 
     delta, run_record = execute_agent_safely(
         agent_name="hotel",
         action=_action,
         step=state.get("graph_step_count", 1) + 1,
-        is_demo=True,
+        is_demo=state.get("is_demo", True),
     )
     delta["agent_runs"] = [run_record]
     return delta

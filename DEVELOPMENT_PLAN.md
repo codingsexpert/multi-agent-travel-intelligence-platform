@@ -250,20 +250,53 @@ This development plan breaks down the construction of the platform into **18 dis
 
 ---
 
-## Phase 7: Model Context Protocol (MCP) Integration
-- **Objective**: Decouple tool logic into standardized Model Context Protocol (MCP) clients and servers.
+## Phase 7: Model Context Protocol (MCP) Integration (Completed)
+- **Objective**: Introduce a production-grade Model Context Protocol (MCP) architecture decoupling agents from provider APIs through typed tools, least privilege permissions, security sandboxing, and full observability.
 - **Implementation Tasks**:
-  1. Implement local MCP server `src/mcp_servers/travel_tools_server.py` exposing tool definitions via JSON-RPC.
-  2. Implement MCP client gateway `src/services/mcp_client.py` connecting domain agents to MCP servers.
-  3. Bind MCP tools to Flight, Hotel, and Weather agents.
-  4. Support transparent fallback to in-memory mocks when external MCP processes are not spawned.
+  1. Built strongly typed Pydantic models under `models/mcp.py`:
+     - Infrastructure & Telemetry: `ToolExecutionStatus`, `ToolExecutionError`, `MCPToolCall`, `MCPToolResult`.
+     - Flight MCP: `SearchFlightsInput`, `SearchFlightsOutput`, `CompareFlightsInput`, `CompareFlightsOutput`, `GetFlightDetailsInput`, `GetFlightDetailsOutput`.
+     - Hotel MCP: `SearchHotelsInput`, `SearchHotelsOutput`, `GetHotelDetailsInput`, `GetHotelDetailsOutput`.
+     - Maps MCP: `PlaceItem`, `SearchPlacesInput`, `SearchPlacesOutput`, `CalculateRouteInput`, `CalculateRouteOutput`, `EstimateTravelTimeInput`, `EstimateTravelTimeOutput`.
+     - Weather MCP: `GetCurrentWeatherInput`, `GetCurrentWeatherOutput`, `GetForecastInput`, `GetForecastOutput`, `GetWeatherAlertsInput`, `GetWeatherAlertsOutput`.
+     - Search MCP: `SearchResultItem`, `WebSearchInput`, `WebSearchOutput`, `FetchPageInput`, `FetchPageOutput`, `SearchNewsInput`, `SearchNewsOutput`.
+     - Currency MCP: `GetExchangeRateInput`, `GetExchangeRateOutput`.
+  2. Implemented `MCPSecurityManager` in `mcp/security.py`:
+     - Least-privilege enforcement via `AGENT_TOOL_PERMISSIONS` allowlist.
+     - URL validation & SSRF prevention blocking localhost, loopbacks, and RFC-1918 private subnets.
+     - Untrusted data isolation: marks all web/search outputs as `untrusted=True` and strips prompt injection attack vectors.
+     - Secret scrubbing in telemetry: masks `api_key`, `secret`, `token`, `password`, `authorization`.
+  3. Implemented MCP Tool Registry in `mcp/registry.py`:
+     - `MCPToolDescriptor` binding tool name, description, schemas, and invocation handler.
+     - Registers all 14 domain tools across Flight, Hotel, Maps, Weather, Search, and Currency domains.
+  4. Implemented `MCPClient` in `mcp/client.py`:
+     - Centralized gateway enforcing permission checks, Pydantic input validation, execution retries, timeouts, and recent call auditing (`get_recent_calls()`).
+  5. Updated all specialized agents and calculation engines to invoke tools via `MCPClient`:
+     - Flight Agent -> Flight MCP (`search_flights`, `compare_flights`)
+     - Hotel Agent -> Hotel MCP (`search_hotels`)
+     - Activity Agent -> Maps MCP (`search_places`, `estimate_travel_time`)
+     - Weather Agent -> Weather MCP (`get_forecast`, `get_weather_alerts`)
+     - Research Agent -> Search MCP (`web_search`, `search_news`)
+     - Budget Engine -> Currency MCP (`get_exchange_rate`)
+  6. Updated `TravelState` in `graph/state.py` with `Annotated[List[Dict[str, Any]], operator.add]` for concurrent tool call reduction.
+  7. Updated Streamlit Travel Command Center (`app/pages/agent_trace.py`):
+     - Displays hierarchical routing tree (Agent -> MCP Server -> Tools).
+     - Live MCP Tool telemetry table showing status chips, latencies, retries, mode, and errors.
+     - Security and least-privilege policy summary matrix.
+  8. Created comprehensive test suite in `tests/test_mcp.py` (28 unit and integration tests covering all 20 required points).
 - **Files / Components**:
-  - `src/mcp_servers/travel_tools_server.py`, `src/services/mcp_client.py`
+  - `models/mcp.py`, `models/__init__.py`
+  - `mcp/security.py`, `mcp/registry.py`, `mcp/client.py`, `mcp/__init__.py`
+  - `mcp/tools/flight_tools.py`, `mcp/tools/hotel_tools.py`, `mcp/tools/maps_tools.py`, `mcp/tools/weather_tools.py`, `mcp/tools/search_tools.py`, `mcp/tools/currency_tools.py`, `mcp/tools/__init__.py`
+  - `agents/flight_agent.py`, `agents/hotel_agent.py`, `agents/activity_agent.py`, `agents/weather_agent.py`, `agents/research_agent.py`, `agents/budget_agent.py`
+  - `engines/budget_engine.py`, `graph/state.py`
+  - `app/pages/agent_trace.py`
   - `tests/test_mcp.py`
 - **Testing Requirements**:
-  - Verify tool discovery, parameter schema validation, and tool invocation via MCP client protocol.
+  - 121 unit and integration tests passing (`pytest -v`).
+  - Verified least privilege, SSRF prevention, untrusted content sanitization, retry behavior, demo marking, and agent integration.
 - **Expected Output**:
-  - Agents invoke tools using the standardized Model Context Protocol.
+  - Decoupled agent architecture communicating with standard MCP tools with least privilege and security boundaries.
 
 ---
 

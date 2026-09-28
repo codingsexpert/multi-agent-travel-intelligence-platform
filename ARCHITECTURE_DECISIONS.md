@@ -258,5 +258,25 @@ Travel budgeting and constraint verification involve strict mathematical additio
    - The workflow connects `[flight, hotel, activity, weather] -> research -> budget_engine -> validator -> END`.
    - Budget Engine and Validator are explicitly tracked in `agent_runs` as `engine_type: "DETERMINISTIC"`.
 
+---
 
+## ADR-14: Model Context Protocol (MCP) Tool Integration, Least Privilege & Security Sandboxing
 
+### Context
+In Phase 7, agents require access to external capabilities (flight discovery, lodging specifications, spatial routing, weather forecasts, web search, and currency exchange). Direct coupling of agents to provider SDKs leads to vendor lock-in, credential leakage, uncontrolled tool permissions, and vulnerability to prompt injection via retrieved web content.
+
+### Decision
+1. **Decoupled MCP Architecture**:
+   - Capabilities are partitioned into 6 distinct MCP tool modules: Flight, Hotel, Maps, Weather, Search, and Currency.
+   - Agents interact strictly with tool interfaces through `MCPClient.call_tool()`. No provider SDKs or MCP implementation logic reside within agents.
+2. **Strict Least-Privilege Permissions**:
+   - Each agent role is governed by `AGENT_TOOL_PERMISSIONS`. Unauthorized tool invocations fail immediately with `PERMISSION_DENIED`.
+   - Booking, payments, booking cancellations, code execution, and shell access are explicitly prohibited across all tool definitions.
+3. **Defense-in-Depth Security Sandboxing**:
+   - *SSRF Prevention*: URLs targeting loopback (`127.0.0.1`, `localhost`) or private RFC-1918 subnets (`10.x.x.x`, `192.168.x.x`) are rejected.
+   - *Untrusted Content Sanitization*: All retrieved web snippets are tagged `untrusted: True` and sanitized to strip script tags and neutralize prompt injection attempts.
+   - *Secret Scrubbing*: Telemetry payloads automatically mask sensitive credentials (`api_key`, `secret`, `token`, `password`, `authorization`).
+4. **Structured Error Handling & Resiliency**:
+   - MCP failures return structured `ToolExecutionError` objects (`tool_name`, `error_code`, `message`, `retryable`, `execution_id`) without crashing LangGraph orchestration.
+5. **Observability & UI Telemetry**:
+   - Tool calls emit `MCPToolCall` audit records capturing latency, retry counts, execution mode (`DEMO` vs `LIVE`), and status chips rendered live in the Streamlit Travel Command Center.

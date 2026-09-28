@@ -263,33 +263,117 @@ class TripState(TypedDict):
 
 ---
 
-## 6. Model Context Protocol (MCP) Architecture
+## 6. Model Context Protocol (MCP) Architecture (Phase 7 Implemented)
 
-The platform adopts the **Model Context Protocol (MCP)** to standardize agent-to-tool integration.
+The platform adopts the **Model Context Protocol (MCP)** to standardize agent-to-tool integration, decoupling probabilistic reasoning agents from external APIs and infrastructure capabilities.
 
 ```mermaid
-graph LR
-    subgraph AgentHost [LangGraph Host Environment]
-        Agent[Domain Agent] <--> MCPClient[LangChain MCP Client Gateway]
+graph TD
+    subgraph Orchestrator [LangGraph State Machine]
+        FlightAgent[Flight Agent]
+        HotelAgent[Hotel Agent]
+        ActivityAgent[Activity Agent]
+        WeatherAgent[Weather Agent]
+        ResearchAgent[Research Agent]
+        BudgetEngineNode[Budget Engine]
     end
-    
-    subgraph MCPServers [Decoupled MCP Tool Servers]
-        MCPClient <-->|JSON-RPC 2.0 / SSE / Stdio| WeatherServer[MCP Weather Server]
-        MCPClient <-->|JSON-RPC 2.0 / SSE / Stdio| FlightServer[MCP Flight Server]
-        MCPClient <-->|JSON-RPC 2.0 / SSE / Stdio| HotelServer[MCP Hotel Server]
+
+    subgraph MCPGatewayLayer [MCP Client & Security Gateway]
+        MCPClient[MCPClient Gateway]
+        SecurityMgr[MCPSecurityManager\n- Least Privilege Allowlist\n- URL & SSRF Sandboxing\n- Untrusted Content Sanitizer\n- Secret Scrubbing]
+        Registry[MCPToolRegistry\n14 Registered Tools & Descriptors]
     end
-    
-    subgraph ExternalWorld [Real APIs or Mock Providers]
-        WeatherServer <--> OpenWeather[OpenWeather API / Mock]
-        FlightServer <--> AmadeusFlights[Amadeus Flight API / Mock]
-        HotelServer <--> BookingService[Hotel Content API / Mock]
+
+    subgraph MCPToolServers [Standardized MCP Tool Domains]
+        FlightMCP["Flight MCP\n• search_flights\n• compare_flights\n• get_flight_details"]
+        HotelMCP["Hotel MCP\n• search_hotels\n• get_hotel_details"]
+        MapsMCP["Maps MCP\n• search_places\n• calculate_route\n• estimate_travel_time"]
+        WeatherMCP["Weather MCP\n• get_current_weather\n• get_forecast\n• get_weather_alerts"]
+        SearchMCP["Search MCP\n• web_search (Sandboxed)\n• fetch_page (SSRF Blocked)\n• search_news (Sandboxed)"]
+        CurrencyMCP["Currency MCP\n• get_exchange_rate"]
     end
+
+    subgraph Providers [Execution Providers]
+        MockProvider["DEMO_MODE=True\nDeterministic Mock Providers\nStrict [DEMO_DATA] Marking"]
+        RealAPIProvider["DEMO_MODE=False (Phase 8)\nAmadeus / OpenWeather / Google Maps\nTavily / Fixer.io FX"]
+    end
+
+    FlightAgent -->|least privilege| MCPClient
+    HotelAgent -->|least privilege| MCPClient
+    ActivityAgent -->|least privilege| MCPClient
+    WeatherAgent -->|least privilege| MCPClient
+    ResearchAgent -->|least privilege| MCPClient
+    BudgetEngineNode -->|least privilege| MCPClient
+
+    MCPClient <--> SecurityMgr
+    MCPClient <--> Registry
+    Registry --> FlightMCP
+    Registry --> HotelMCP
+    Registry --> MapsMCP
+    Registry --> WeatherMCP
+    Registry --> SearchMCP
+    Registry --> CurrencyMCP
+
+    FlightMCP --> Providers
+    HotelMCP --> Providers
+    MapsMCP --> Providers
+    WeatherMCP --> Providers
+    SearchMCP --> Providers
+    CurrencyMCP --> Providers
 ```
 
-### Why MCP?
-- **Tool Decoupling**: Agents do not contain proprietary API client libraries; they communicate via standardized JSON-RPC specifications.
-- **Security Sandboxing**: MCP servers can run in isolated processes with restricted network and credential access.
-- **Mock Interchangeability**: Switching between `DEMO_MODE=true` and live production only requires swapping MCP endpoints or server configurations, without modifying agent prompt logic.
+### 6.1 Architectural Role Separation
+
+The platform establishes distinct, non-overlapping architectural roles:
+
+- **Agent = Reasoning & Decision Making**: Probabilistic intelligence evaluating constraints, assessing trade-offs, and coordinating domain objectives.
+- **MCP = Standardized Capability & Tool Access**: Strongly-typed protocol layer abstracting third-party capabilities, input schemas, and execution boundaries.
+- **Python = Deterministic Business Logic**: Pure Python arithmetic, temporal feasibility checks, and budget auditing with zero LLM math or hallucination risk.
+- **LangGraph = Stateful Orchestration**: Graph state machine coordinating parallel fan-out, fan-in convergence, retries, and checkpointing.
+- **Supabase = Persistent Storage & Security**: PostgreSQL persistence, Row Level Security (RLS), and JWT authentication.
+- **RAG = Curated Knowledge Retrieval**: Vector similarity search over static travel guides, cultural norms, and destination documentation.
+- **Web Search = Fresh Dynamic Information**: Sandboxed external search querying real-time conditions, events, and seasonal updates.
+
+### 6.2 MCP vs Direct API Integration vs Normal Function Calling
+
+| Evaluation Dimension | Direct API Integration | Normal Function Calling | Model Context Protocol (MCP) |
+|----------------------|------------------------|-------------------------|------------------------------|
+| **Coupling** | High: Agents depend directly on provider SDKs (e.g. Amadeus client). | Medium: Agents depend on local in-repo helper functions. | **Zero**: Agents interact via standard tool protocol interfaces. |
+| **Provider Swapping** | Hard: Refactoring agent logic when migrating from Mock to Amadeus or Sabre. | Medium: Requires rewriting internal helper functions. | **Trivial**: Change tool descriptor backend without altering agent logic. |
+| **Security Boundaries** | Poor: API tokens exposed in agent execution memory. | Inconsistent: Ad-hoc validation across helper scripts. | **Strict**: Centralized least-privilege allowlists, URL sandboxing, SSRF blocking. |
+| **Observability** | Ad-hoc custom logging per provider. | Inconsistent function return structures. | **Uniform**: Standardized execution ID, latency, retry count, and masked telemetry. |
+| **Multi-Language / Remote** | Tied to Python runtime. | In-process Python only. | Extensible across language boundaries and remote microservices. |
+
+### 6.3 Tool Permission Model & Least Privilege Matrix
+
+No agent has automatic or universal access to all tools. Invoking an unauthorized tool immediately triggers a `PERMISSION_DENIED` execution error without invoking provider logic:
+
+```python
+AGENT_TOOL_PERMISSIONS = {
+    "flight": {"search_flights", "compare_flights", "get_flight_details"},
+    "hotel": {"search_hotels", "get_hotel_details"},
+    "activity": {"search_places", "calculate_route", "estimate_travel_time"},
+    "weather": {"get_current_weather", "get_forecast", "get_weather_alerts"},
+    "research": {"web_search", "fetch_page", "search_news"},
+    "budget": {"get_exchange_rate"},
+    "validator": {"estimate_travel_time", "get_exchange_rate"},
+}
+```
+
+*Explicitly prohibited operations*: Booking, payments, booking cancellations, shell execution, arbitrary code execution, and arbitrary URL downloads are strictly prohibited across all agents.
+
+### 6.4 Security Boundaries & Sandboxing
+
+1. **Input & Argument Validation**: Every tool enforces Pydantic v2 schemas. Missing or malformed parameters are rejected with structured `INVALID_ARGUMENTS` errors.
+2. **SSRF & Private IP Blocking**: `FetchPageInput` rejects any non-HTTP(S) protocol and blocks private subnets (`127.0.0.1`, `localhost`, `0.0.0.0`, `10.x.x.x`, `192.168.x.x`, `169.254.x.x`).
+3. **Untrusted Web Content Sanitization**: All content retrieved via Search MCP tools is tagged `untrusted: True`. Text is stripped of script tags, style blocks, and sanitized against prompt injection patterns (`ignore previous instructions`, `system prompt`, `developer mode`).
+4. **Secret Scrubbing in Telemetry**: Telemetry payloads automatically mask sensitive credentials (`api_key`, `secret`, `token`, `password`, `authorization`) with `[MASKED_SECRET]`.
+
+### 6.5 Failure Isolation & Resiliency
+
+MCP tool failures do not crash the LangGraph workflow:
+- Errors return structured `ToolExecutionError` with `tool_name`, `error_code`, `message`, `retryable`, and `execution_id`.
+- The invoking agent isolates the tool failure, records diagnostic warnings in state, falls back to deterministic models if available, and allows the remaining parallel agents to proceed unimpeded.
 
 ---
 

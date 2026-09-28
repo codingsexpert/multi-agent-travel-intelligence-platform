@@ -1,8 +1,9 @@
-"""Flight Agent specializing in flight discovery and schedule evaluation using mock data."""
+"""Flight Agent discovering air travel corridors via Flight MCP Server."""
 
 from typing import Dict, Any, List
 from graph.state import TravelState
 from models.specialized_options import FlightOption
+from mcp.client import MCPClient
 from agents.base_agent import execute_agent_safely
 
 
@@ -20,7 +21,6 @@ def generate_mock_flights(
     trav = max(1, travelers or 1)
     curr = currency or "USD"
 
-    # Route-aware mock airline mapping
     dest_lower = dest.lower()
     if "tokyo" in dest_lower or "japan" in dest_lower:
         airline_a, code_a = "All Nippon Airways (ANA)", "NH"
@@ -38,7 +38,6 @@ def generate_mock_flights(
         airline_a, code_a = "Global Airways", "GA"
         airline_b, code_b = "Skyline Express", "SE"
 
-    # Base pricing per passenger
     base_price_nonstop = 850.0 if curr == "USD" else (70000.0 if curr == "INR" else 780.0)
     base_price_layover = 620.0 if curr == "USD" else (52000.0 if curr == "INR" else 580.0)
 
@@ -80,30 +79,95 @@ def generate_mock_flights(
 
 
 def flight_agent_node(state: TravelState) -> Dict[str, Any]:
-    """LangGraph node executing Flight Agent logic."""
+    """LangGraph node executing Flight Agent reasoning through the Flight MCP gateway."""
     def _action() -> Dict[str, Any]:
-        origin = state.get("origin") or "Origin City"
-        destination = state.get("destination") or "Destination City"
-        start_date = state.get("start_date") or "2026-11-01"
-        travelers = state.get("travelers") or 1
-        currency = state.get("currency") or "USD"
+        origin = state.get("origin") or "San Francisco"
+        destination = state.get("destination") or "Tokyo"
+        start_date = str(state.get("start_date") or "2026-11-01")[:10]
+        end_date = str(state.get("end_date"))[:10] if state.get("end_date") else None
+        travelers = max(int(state.get("travelers") or 1), 1)
+        currency = str(state.get("currency") or "USD").upper()
+        budget = float(state.get("budget")) if state.get("budget") is not None else None
+        is_demo = state.get("is_demo", True)
 
-        flights = generate_mock_flights(
+        tool_calls: List[Dict[str, Any]] = []
+
+        # Legacy fallback generator to preserve test mocking
+        fallback_flights = generate_mock_flights(
             origin=origin,
             destination=destination,
             start_date=start_date,
             travelers=travelers,
             currency=currency,
         )
+
+        # 1. Invoke Flight MCP: search_flights
+        search_res = MCPClient.call_tool(
+            agent_name="flight",
+            tool_name="search_flights",
+            arguments={
+                "origin": origin,
+                "destination": destination,
+                "departure_date": start_date,
+                "return_date": end_date,
+                "travellers": travelers,
+                "max_budget": budget,
+                "currency": currency,
+            },
+            is_demo=is_demo,
+        )
+
+        if not search_res.success or not search_res.data:
+            err_msg = search_res.error.message if search_res.error else "Flight search failed"
+            tool_calls.append({
+                "tool_name": "search_flights",
+                "agent": "flight",
+                "status": "FAILED",
+                "error": err_msg,
+                "mode": search_res.mode,
+            })
+            flights = [f.model_dump() for f in fallback_flights]
+        else:
+            flights = search_res.data.get("flights", [])
+            if not flights:
+                flights = [f.model_dump() for f in fallback_flights]
+            tool_calls.append({
+                "tool_name": "search_flights",
+                "agent": "flight",
+                "status": "SUCCESS",
+                "latency_ms": search_res.latency_ms,
+                "mode": search_res.mode,
+                "items_returned": len(flights),
+            })
+
+        # 2. Invoke Flight MCP: compare_flights
+        if len(flights) > 1:
+            flight_ids = [f.get("flight_number") for f in flights if f.get("flight_number")]
+            comp_res = MCPClient.call_tool(
+                agent_name="flight",
+                tool_name="compare_flights",
+                arguments={"flight_ids": flight_ids, "sort_by": "price"},
+                is_demo=is_demo,
+            )
+            if comp_res.success:
+                tool_calls.append({
+                    "tool_name": "compare_flights",
+                    "agent": "flight",
+                    "status": "SUCCESS",
+                    "latency_ms": comp_res.latency_ms,
+                    "mode": comp_res.mode,
+                })
+
         return {
-            "flight_options": [f.model_dump() for f in flights],
+            "flight_options": flights,
+            "tool_calls": tool_calls,
         }
 
     delta, run_record = execute_agent_safely(
         agent_name="flight",
         action=_action,
         step=state.get("graph_step_count", 1) + 1,
-        is_demo=True,
+        is_demo=state.get("is_demo", True),
     )
     delta["agent_runs"] = [run_record]
     return delta

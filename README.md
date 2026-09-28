@@ -172,20 +172,41 @@ travel-intelligence-platform/
 │   └── validator_engine.py       # Deterministic feasibility & time-conflict validation
 ├── graph/                        # LangGraph orchestration state machine (Phases 4, 5 & 6)
 ├── guardrails/                   # Input, tool & output safety guardrails (Phase 11)
-├── mcp/                          # Model Context Protocol servers & clients (Phase 7)
+├── mcp/                          # Model Context Protocol servers & clients (Phase 7 - Completed)
+│   ├── __init__.py
+│   ├── client.py                 # MCPClient gateway with retries, timeouts, and auditing
+│   ├── registry.py               # MCPToolRegistry with 14 typed descriptors
+│   ├── security.py               # MCPSecurityManager (Least privilege, SSRF, sanitization)
+│   └── tools/                    # Domain-specific MCP tools
+│       ├── flight_tools.py       # search_flights, compare_flights, get_flight_details
+│       ├── hotel_tools.py        # search_hotels, get_hotel_details
+│       ├── maps_tools.py         # search_places, calculate_route, estimate_travel_time
+│       ├── weather_tools.py      # get_current_weather, get_forecast, get_weather_alerts
+│       ├── search_tools.py       # web_search, fetch_page, search_news
+│       └── currency_tools.py     # get_exchange_rate
 ├── rag/                          # pgvector RAG domain knowledge base (Phase 9)
 ├── evaluation/                   # Automated evaluation & benchmark datasets (Phase 16)
-├── tests/                        # Comprehensive test suite (pytest)
+├── tests/                        # Comprehensive test suite (pytest - 121 tests)
 │   ├── test_auth.py              # Supabase Auth and session tests
+│   ├── test_budget_engine.py     # Deterministic budget calculation tests
 │   ├── test_config.py            # Environment & settings loading tests
+│   ├── test_demo_extractor.py    # Deterministic fallback parser tests
 │   ├── test_health.py            # Health status & component checks
+│   ├── test_langgraph_workflow.py# Core LangGraph orchestration tests
+│   ├── test_llm_service.py       # LLM provider & fallback tests
 │   ├── test_logger_exceptions.py # Secret scrubbing & exception hierarchy tests
+│   ├── test_mcp.py               # Phase 7 MCP tools, validation, security, and client tests
 │   ├── test_models.py            # Pydantic travel schema validation tests
+│   ├── test_multi_agent_workflow.py # Multi-agent workflow integration tests
+│   ├── test_planner_models.py    # Structured planner model tests
+│   ├── test_planning_service.py  # End-to-end planning service tests
 │   ├── test_repositories.py      # Repository CRUD & user data isolation tests
 │   ├── test_schema_sql.py        # SQL migration & RLS policy verification tests
+│   ├── test_specialized_agents.py# Specialized domain agent tests
 │   ├── test_supabase.py          # Supabase service & DEMO_MODE fallback tests
 │   ├── test_ui_form.py           # Travel intake form validation tests
-│   └── test_ui_state.py          # Session state & navigation tests
+│   ├── test_ui_state.py          # Session state & navigation tests
+│   └── test_validator_engine.py  # Feasibility & time conflict validation tests
 ├── requirements.txt              # Pinned, lightweight core dependencies
 ├── .env.example                  # Environment configuration template (zero secrets)
 ├── .gitignore                    # Version control exclusion rules
@@ -270,7 +291,7 @@ The platform is developed in **18 distinct phases**:
 - [x] **Phase 4: LangGraph Core Engine & Planner Agent** *(Completed)*
 - [x] **Phase 5: Specialized Mock Domain Agents** *(Completed)*
 - [x] **Phase 6: Budget Engine & Validator/Safety Agent (Pure Python)** *(Completed)*
-- [ ] **Phase 7: Model Context Protocol (MCP) Integration**
+- [x] **Phase 7: Model Context Protocol (MCP) Integration** *(Completed)*
 - [ ] **Phase 8: Real External APIs Integration**
 - [ ] **Phase 9: RAG Knowledge Base & Supabase pgvector**
 - [ ] **Phase 10: Live Web Search Integration**

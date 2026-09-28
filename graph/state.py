@@ -75,7 +75,7 @@ class TravelState(TypedDict, total=False):
 
     # --- Observability, Guardrails & Execution Tracing ---
     agent_runs: Annotated[List[Dict[str, Any]], operator.add]
-    tool_calls: List[Dict[str, Any]]
+    tool_calls: Annotated[List[Dict[str, Any]], operator.add]
     retry_count: int
     graph_step_count: int
     is_demo: bool

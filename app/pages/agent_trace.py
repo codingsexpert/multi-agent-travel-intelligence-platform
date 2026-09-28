@@ -137,7 +137,119 @@ def render_agent_trace_page() -> None:
         st.table(trace_data)
 
     st.markdown("---")
-    st.markdown("### System Architecture Roster (Phase 6)")
+    st.markdown("### 🔌 MCP Tool Invocations & Observability (Phase 7)")
+    st.markdown(
+        "Standardized Model Context Protocol (MCP) tool execution. Agents invoke typed external capabilities "
+        "through the secure MCP Client with least-privilege permission validation, timeouts, retries, and data sandboxing."
+    )
+
+    # 1. Fetch recorded tool calls from state or client
+    state_tool_calls = travel_state.get("tool_calls", [])
+    from mcp.client import MCPClient
+    client_tool_calls = [c.model_dump() for c in MCPClient.get_recent_calls()]
+
+    # Combine unique calls by execution_id or timestamp
+    all_calls = list(state_tool_calls)
+    seen_ids = {c.get("execution_id") for c in all_calls if c.get("execution_id")}
+    for cc in client_tool_calls:
+        if cc.get("execution_id") not in seen_ids:
+            all_calls.append(cc)
+            seen_ids.add(cc.get("execution_id"))
+
+    # Tool Execution Hierarchy Visual
+    col_tree, col_summary = st.columns([3, 2])
+
+    with col_tree:
+        st.markdown("#### MCP Tool Routing Tree")
+        st.code(
+            """
+Flight Agent
+  └── Flight MCP
+       ├── search_flights       ✓
+       ├── compare_flights      ✓
+       └── get_flight_details   ✓
+
+Hotel Agent
+  └── Hotel MCP
+       ├── search_hotels        ✓
+       └── get_hotel_details    ✓
+
+Activity Agent
+  └── Maps MCP
+       ├── search_places        ✓
+       ├── calculate_route      ✓
+       └── estimate_travel_time ✓
+
+Weather Agent
+  └── Weather MCP
+       ├── get_current_weather  ✓
+       ├── get_forecast         ✓
+       └── get_weather_alerts   ✓
+
+Research Agent
+  └── Search MCP
+       ├── web_search           ✓ (Untrusted Data Sandboxed)
+       ├── fetch_page           ✓ (URL Allowlist Enforced)
+       └── search_news          ✓ (Untrusted Data Sandboxed)
+
+Budget Engine
+  └── Currency MCP
+       └── get_exchange_rate    ✓
+            """,
+            language="text",
+        )
+
+    with col_summary:
+        st.markdown("#### Security & Boundaries")
+        st.markdown(
+            """
+            - 🛡️ **Least Privilege**: Each agent can only invoke tools in its designated allowlist.
+            - 🔒 **URL Sandboxing**: Localhost, link-local, and private RFC-1918 IPs blocked (SSRF prevention).
+            - 🧼 **Untrusted Web Content**: All retrieved search & web content marked `untrusted` with injection tokens sanitized.
+            - ⏱️ **Timeouts & Retries**: Exponential backoff with strict execution ceilings.
+            - 🚫 **No Arbitrary Execution**: Booking, payments, shell, and code execution strictly prohibited.
+            """
+        )
+
+    # MCP Tool Call Telemetry Table
+    st.markdown("#### Active MCP Tool Telemetry")
+    if not all_calls:
+        st.info("ℹ️ **No MCP Tool Calls Recorded Yet**: Run a trip planning workflow to see real-time tool telemetry.")
+    else:
+        mcp_table_rows = []
+        for call in all_calls:
+            c_tool = call.get("tool_name", "unknown")
+            c_agent = f"{call.get('agent_name', 'system').capitalize()} Agent"
+            c_status = call.get("status", "SUCCESS")
+            c_duration = call.get("duration_ms", 0.0)
+            c_retries = call.get("retries", 0)
+            c_mode = call.get("mode", "DEMO")
+            c_error = call.get("error") or "None"
+
+            # Status Icon
+            if c_status == "SUCCESS":
+                status_icon = "✅ SUCCESS"
+            elif c_status == "UNAUTHORIZED":
+                status_icon = "🚫 UNAUTHORIZED"
+            elif c_status == "TIMED_OUT":
+                status_icon = "⏱️ TIMED OUT"
+            else:
+                status_icon = f"❌ {c_status}"
+
+            mcp_table_rows.append({
+                "Tool": c_tool,
+                "Agent": c_agent,
+                "Status": status_icon,
+                "Duration": f"{c_duration:.1f}ms",
+                "Retries": c_retries,
+                "Mode": c_mode,
+                "Error Details": c_error,
+            })
+
+        st.table(mcp_table_rows)
+
+    st.markdown("---")
+    st.markdown("### System Architecture Roster (Phase 7)")
 
     for idx, agent in enumerate(PLANNED_AGENTS, 1):
         with st.container():
@@ -176,3 +288,4 @@ def render_agent_trace_page() -> None:
                 """,
                 unsafe_allow_html=True,
             )
+
