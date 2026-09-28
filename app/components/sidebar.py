@@ -113,7 +113,12 @@ def render_sidebar() -> str:
         st.session_state.current_page = selected_page
 
         st.markdown("---")
+        user = st.session_state.get("auth_user", {}) or {}
+        user_email = user.get("email", "guest")
+        is_demo = user.get("is_demo", True)
+        user_label = f"👤 {user_email} (Demo)" if is_demo else f"👤 {user_email}"
+        st.caption(user_label)
         st.caption(f"Workflow: `{st.session_state.get('workflow_status', 'IDLE')}`")
-        st.caption("Phase 2: Travel Command Center UI")
+        st.caption("Phase 3: Supabase & Persistence")
 
     return selected_page

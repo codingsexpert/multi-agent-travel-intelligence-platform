@@ -1,11 +1,17 @@
-"""Conversational travel planning interface foundation."""
+"""Conversational travel planning interface connected to conversation & message repositories."""
 
 import streamlit as st
-from app.state.session import add_message, get_current_trip
+from app.state.session import (
+    get_current_user,
+    get_current_trip,
+    get_current_conversation_id,
+    set_current_conversation_id,
+)
+from repositories import conversation_repository, message_repository
 
 
 def render_conversation_page() -> None:
-    """Render conversational interaction interface foundation."""
+    """Render conversational interface backed by repository persistence."""
     st.title("Travel Planning Assistant")
     st.markdown(
         "Chat with the conversational multi-agent interface to refine requirements, ask destination questions, or adjust constraints."
@@ -13,49 +19,88 @@ def render_conversation_page() -> None:
 
     st.markdown("---")
 
-    # Informational notice as requested
-    st.info(
-        "ℹ️ **Conversational Engine Offline**: The conversational planning engine and LangGraph streaming agents will be connected in Phase 4. Messages entered here are stored in session state for UI verification only. No live LLM calls are executed."
-    )
-
+    current_user = get_current_user()
     active_trip = get_current_trip()
-    if active_trip:
-        st.caption(
-            f"Context: Planning trip to **{active_trip.destination}** ({active_trip.start_date} to {active_trip.end_date}, budget: {active_trip.currency} {active_trip.budget:,.0f})"
+    current_trip_id = st.session_state.get("current_trip_id")
+
+    # Ensure conversation exists
+    conv_id = get_current_conversation_id()
+    if not conv_id:
+        title = f"Planning: {active_trip.destination}" if active_trip else "General Travel Inquiries"
+        conv = conversation_repository.create_conversation(
+            user_id=current_user["id"],
+            trip_id=current_trip_id,
+            title=title,
+        )
+        conv_id = conv["id"]
+        set_current_conversation_id(conv_id)
+
+        # Welcome message
+        welcome = (
+            "Hello! I am your AI Travel Intelligence Assistant. "
+            "In later phases, I will help you formulate trip requirements, explore flight and hotel trade-offs, "
+            "and dynamically replan your itinerary when conditions change. How can I help you today?"
+        )
+        message_repository.create_message(
+            conversation_id=conv_id,
+            role="assistant",
+            content=welcome,
         )
 
-    # Initialize sample messages if empty
-    messages = st.session_state.get("messages", [])
-    if not messages:
-        messages = [
-            {
-                "role": "assistant",
-                "content": (
-                    "Hello! I am your AI Travel Intelligence Assistant. "
-                    "In later phases, I will help you formulate trip requirements, explore flight and hotel trade-offs, "
-                    "and dynamically replan your itinerary when conditions change. How can I help you today?"
-                ),
-            }
-        ]
-        st.session_state.messages = messages
+    # Context Header
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        if active_trip:
+            st.caption(
+                f"Context: **{active_trip.origin} &rarr; {active_trip.destination}** "
+                f"({active_trip.start_date} to {active_trip.end_date}, budget: {active_trip.currency} {active_trip.budget:,.0f})"
+            )
+        else:
+            st.caption("Context: No active trip selected. You can plan a new trip or ask general questions.")
+    with c2:
+        st.caption(f"Thread ID: `{conv_id[:8]}...`")
 
-    # Render conversation area
+    st.info(
+        "ℹ️ **Conversational Persistence Active**: Messages in this thread are saved via `MessageRepository`. "
+        "The LangGraph LLM engine will be connected in Phase 4. Responses below are structural placeholders."
+    )
+
+    # Load messages from repository
+    try:
+        messages = message_repository.list_messages_for_conversation(conv_id)
+    except Exception as e:
+        st.error(f"Error loading conversation messages: {e}")
+        messages = []
+
+    # Render message history
     chat_container = st.container()
     with chat_container:
         for msg in messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
+                st.caption(f"Sent at: {msg.get('created_at', '')[:19].replace('T', ' ')}")
 
-    # Input Box and Send
-    user_input = st.chat_input("Ask a question or adjust your trip requirements (e.g. 'Add a day trip to Kamakura')...")
+    # Input Box
+    user_input = st.chat_input("Ask a question or adjust your trip requirements...")
 
     if user_input:
-        add_message("user", user_input)
-        # Placeholder response
-        placeholder_reply = (
-            f"[Phase 2 Placeholder] Received: '{user_input}'. "
-            "In Phase 4, the Planner Agent will parse this prompt, trigger specialized domain agents, "
-            "and update your itinerary state."
+        # Save user message
+        message_repository.create_message(
+            conversation_id=conv_id,
+            role="user",
+            content=user_input,
         )
-        add_message("assistant", placeholder_reply)
+
+        # Generate and save assistant placeholder response
+        placeholder_reply = (
+            f"[Phase 3 Repository Placeholder] Received your message: '{user_input}'. "
+            "In Phase 4, the Planner Agent in LangGraph will parse this prompt, coordinate specialized agents, "
+            "and synthesize live recommendations."
+        )
+        message_repository.create_message(
+            conversation_id=conv_id,
+            role="assistant",
+            content=placeholder_reply,
+        )
+
         st.rerun()

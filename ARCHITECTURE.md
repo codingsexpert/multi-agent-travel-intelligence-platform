@@ -272,69 +272,100 @@ While RAG handles static travel knowledge, **Web Search** handles **fresh, volat
 
 ## 9. Supabase Architecture (PostgreSQL, Auth & pgvector)
 
-Supabase serves as the unified persistence and security foundation:
+Supabase serves as the unified persistence, authentication, and security foundation:
 
 ```mermaid
 erDiagram
-    USERS ||--o{ TRIPS : owns
-    TRIPS ||--o{ ITINERARY_DAYS : contains
-    ITINERARY_DAYS ||--o{ ITINERARY_ITEMS : includes
-    TRIPS ||--o{ REPLANNING_HISTORY : logs
-    DESTINATION_KNOWLEDGE ||--o{ KNOWLEDGE_CHUNKS : splits
+    PROFILES ||--o{ TRIPS : owns
+    PROFILES ||--o{ CONVERSATIONS : starts
+    TRIPS ||--|| TRIP_PREFERENCES : configures
+    TRIPS ||--o{ CONVERSATIONS : context
+    TRIPS ||--o{ AGENT_RUNS : logs
+    CONVERSATIONS ||--o{ MESSAGES : contains
 
-    USERS {
+    PROFILES {
         uuid id PK
         string email
-        jsonb preferences
+        string full_name
         timestamp created_at
+        timestamp updated_at
     }
 
     TRIPS {
         uuid id PK
         uuid user_id FK
+        string origin
         string destination
         date start_date
         date end_date
-        decimal budget_limit
-        decimal total_estimated_cost
+        integer travelers
+        numeric budget
+        string currency
         string status
-        jsonb trip_spec
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    TRIP_PREFERENCES {
+        uuid id PK
+        uuid trip_id FK
+        jsonb preferences
+        string travel_style
+        string accommodation_preference
+        text additional_requirements
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    CONVERSATIONS {
+        uuid id PK
+        uuid user_id FK
+        uuid trip_id FK
+        string title
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    MESSAGES {
+        uuid id PK
+        uuid conversation_id FK
+        string role
+        text content
         timestamp created_at
     }
 
-    ITINERARY_DAYS {
+    AGENT_RUNS {
         uuid id PK
         uuid trip_id FK
-        int day_number
-        date date
-        string theme
-    }
-
-    ITINERARY_ITEMS {
-        uuid id PK
-        uuid day_id FK
-        string item_type
-        string title
-        time start_time
-        time end_time
-        decimal cost
-        jsonb details
-    }
-
-    KNOWLEDGE_CHUNKS {
-        uuid id PK
-        string destination
-        string category
-        text content
-        vector embedding
+        string agent_name
+        string status
+        timestamp started_at
+        timestamp completed_at
+        text error_message
         jsonb metadata
+        timestamp created_at
     }
 ```
 
-### Security & Row Level Security (RLS)
-- Every table containing user data (`trips`, `itinerary_days`, `itinerary_items`, `replanning_history`) enables RLS.
-- Policies enforce `auth.uid() = user_id`, guaranteeing absolute data isolation between users.
-- Public read access is granted only to the `knowledge_chunks` table for verified vector search operations.
+### 9.1 Database Schema Design
+1. **`profiles`**: Linked 1-to-1 with `auth.users(id)` via an automated PostgreSQL trigger (`on_auth_user_created`). Ensures user records exist within public schema.
+2. **`trips`**: Normalized table containing core route, scheduling, budget limits, and status (`DRAFT`, `PLANNING`, `APPROVED`, `COMPLETED`, `CANCELLED`).
+3. **`trip_preferences`**: Decoupled preference table for qualitative traveler parameters, travel style, lodging preferences, and additional notes.
+4. **`conversations`**: Thread parent entities linked to `user_id` and optionally to `trip_id`.
+5. **`messages`**: Chronological conversation history with roles strictly validated to `user`, `assistant`, or `system`.
+6. **`agent_runs`**: Immutable audit log tracking start, completion, error messages, and telemetry for every agent node in the workflow.
+
+### 9.2 Row Level Security (RLS) Strategy
+- **Engine-Level Isolation**: RLS is activated on all 6 tables (`ALTER TABLE ... ENABLE ROW LEVEL SECURITY;`).
+- **Direct Ownership**: Tables with direct user ownership (`profiles`, `trips`, `conversations`) use `USING (auth.uid() = user_id)`.
+- **Hierarchical Ownership**: Child tables (`trip_preferences`, `messages`, `agent_runs`) use correlated subqueries (`EXISTS (SELECT 1 FROM trips WHERE trips.id = trip_id AND trips.user_id = auth.uid())`), eliminating the risk of data leakage.
+
+### 9.3 Repository Layer & DEMO_MODE Fallback
+- Services and UI components never execute raw SQL or PostgREST queries directly.
+- The repository layer (`TripRepository`, `ConversationRepository`, `MessageRepository`, `AgentRunRepository`) inspects `is_demo_mode`:
+  - In `DEMO_MODE=true` or when credentials are missing, repositories route to an in-memory `MockDataStore` tagging records as `is_demo: True`.
+  - In live mode, operations execute against Supabase with JWT authorization.
+- Zero code changes required to toggle between local offline demos and production.
 
 ---
 

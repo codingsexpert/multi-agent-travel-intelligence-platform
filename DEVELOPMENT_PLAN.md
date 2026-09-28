@@ -115,21 +115,36 @@ This development plan breaks down the construction of the platform into **18 dis
 
 ---
 
-## Phase 3: Supabase Integration (PostgreSQL, Auth & RLS)
-- **Objective**: Implement durable persistence, user authentication, and Row Level Security for trip data.
+## Phase 3: Supabase Integration (PostgreSQL, Auth & RLS) (Completed)
+- **Objective**: Implement durable persistence, user authentication, and Row Level Security for trip data with seamless in-memory fallback in `DEMO_MODE`.
 - **Implementation Tasks**:
-  1. Write SQL schema migration files in `supabase/migrations/` (`users`, `trips`, `itinerary_days`, `itinerary_items`, `replanning_history`).
-  2. Configure RLS policies ensuring users can only read and write their own records.
-  3. Build Supabase client wrapper `src/services/supabase_client.py` handling auth tokens, connection pooling, and error handling.
-  4. Build repository classes `src/repositories/trip_repository.py` for CRUD operations on trips and itineraries.
+  1. Wrote versioned SQL schema migration in `supabase/migrations/20260928000001_initial_schema.sql` covering `profiles`, `trips`, `trip_preferences`, `conversations`, `messages`, and `agent_runs` with indexes and triggers.
+  2. Implemented strict Row Level Security (RLS) policies in `supabase/migrations/20260928000002_rls_policies.sql` ensuring authenticated users can only access their own data via `auth.uid()`.
+  3. Built authentication service in `services/auth_service.py` integrating Supabase Auth (`sign_up`, `sign_in`, `sign_out`, `get_current_user`) with offline guest identity in `DEMO_MODE`.
+  4. Implemented repository abstraction layer in `repositories/`:
+     - `TripRepository`: CRUD for trips and preferences with strict user isolation
+     - `ConversationRepository`: Thread creation and retrieval
+     - `MessageRepository`: Chronological message persistence with role validation
+     - `AgentRunRepository`: Execution telemetry and audit tracking
+     - `MockDataStore`: Isolated in-memory fallback store tagging records as `demo: True`
+  5. Connected Streamlit UI:
+     - `New Trip`: Persists trip, preferences, conversation, and initial user message via repositories
+     - `My Trips`: Displays user-isolated trips with "Open Trip" activation
+     - `Conversation`: Loads and appends thread messages via repositories
+     - `Settings`: Live sign in / sign up / sign out controls when configured, or clear DEMO MODE local guest identity banner
+  6. Added comprehensive unit tests in `tests/test_repositories.py`, `tests/test_auth.py`, and `tests/test_schema_sql.py`.
 - **Files / Components**:
-  - `supabase/migrations/001_initial_schema.sql`, `supabase/migrations/002_rls_policies.sql`
-  - `src/services/supabase_client.py`, `src/repositories/trip_repository.py`
-  - `tests/test_repositories.py`
+  - `supabase/migrations/20260928000001_initial_schema.sql`, `supabase/migrations/20260928000002_rls_policies.sql`, `supabase/README.md`
+  - `services/auth_service.py`
+  - `repositories/base.py`, `repositories/mock_store.py`, `repositories/trip_repository.py`, `repositories/conversation_repository.py`, `repositories/message_repository.py`, `repositories/agent_run_repository.py`, `repositories/__init__.py`
+  - `app/state/session.py`, `app/state/__init__.py`
+  - `app/pages/new_trip.py`, `app/pages/my_trips.py`, `app/pages/conversation.py`, `app/pages/settings.py`
+  - `tests/test_repositories.py`, `tests/test_auth.py`, `tests/test_schema_sql.py`
 - **Testing Requirements**:
-  - Unit/integration test testing repository CRUD with local SQLite or mock Supabase client when offline.
+  - 32 unit tests passing with pytest (`pytest -v`).
+  - Headless Streamlit smoke test on port 8504 returning HTTP 200 OK without errors.
 - **Expected Output**:
-  - Persistent storage layer with enforced database security policies.
+  - Production-ready database schema, RLS policies, Supabase Auth integration, and repository layer operational with full DEMO_MODE fallback.
 
 ---
 

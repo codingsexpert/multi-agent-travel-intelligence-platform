@@ -115,9 +115,9 @@ travel-intelligence-platform/
 ├── app/                          # Streamlit Travel Command Center
 │   ├── __init__.py
 │   ├── main.py                   # Main entrypoint & page router
-│   ├── state/                    # Session state management
+│   ├── state/                    # Session state management (trip, user, conv)
 │   │   ├── __init__.py
-│   │   └── session.py            # Active trip & navigation state
+│   │   └── session.py            # Active trip, auth & navigation state
 │   ├── components/               # Modular UI components
 │   │   ├── __init__.py
 │   │   ├── sidebar.py            # Navigation & environment indicators
@@ -125,9 +125,9 @@ travel-intelligence-platform/
 │   └── pages/                    # 13 dedicated command center views
 │       ├── __init__.py
 │       ├── dashboard.py          # Platform readiness & quick action
-│       ├── new_trip.py           # Pydantic-validated trip intake form
-│       ├── my_trips.py           # In-memory saved trips & history
-│       ├── conversation.py       # Conversational planning interface
+│       ├── new_trip.py           # Intake form with repository persistence
+│       ├── my_trips.py           # Saved trips list with user data isolation
+│       ├── conversation.py       # Thread & message persistence interface
 │       ├── itinerary.py          # Day-by-day activity slot layouts
 │       ├── flights.py            # Flight search & corridor analysis
 │       ├── hotels.py             # Accommodation & lodging alternatives
@@ -136,33 +136,49 @@ travel-intelligence-platform/
 │       ├── budget.py             # Deterministic budget breakdown grid
 │       ├── sources.py            # Citations (RAG, Web, APIs)
 │       ├── agent_trace.py        # 9 agents execution telemetry
-│       └── settings.py           # Environment diagnostics & secrets mask
+│       └── settings.py           # Supabase Auth controls & diagnostics
 ├── config/                       # Centralized settings & environment loading
 │   ├── __init__.py
 │   └── settings.py               # Pydantic Settings with DEMO_MODE defaults
 ├── models/                       # Pydantic v2 domain schemas & data validation
 │   ├── __init__.py
 │   └── travel_request.py         # TravelRequest, TravelerPreferences, Constraints
+├── repositories/                 # Data access layer with DEMO_MODE fallback
+│   ├── __init__.py
+│   ├── base.py                   # Base repository
+│   ├── mock_store.py             # Thread-safe in-memory store for DEMO_MODE
+│   ├── trip_repository.py        # Trips and trip preferences CRUD
+│   ├── conversation_repository.py# Conversation threads CRUD
+│   ├── message_repository.py     # Chronological messages CRUD
+│   └── agent_run_repository.py   # Agent run audit log & telemetry
 ├── services/                     # Backend services & integration abstractions
 │   ├── __init__.py
+│   ├── auth_service.py           # Supabase Auth with DEMO_MODE fallback
 │   ├── health_service.py         # Non-blocking health & configuration verification
 │   └── supabase_service.py       # Supabase client wrapper with DEMO_MODE fallback
+├── supabase/                     # Database migrations & RLS policies
+│   ├── README.md                 # Migration guide & CLI instructions
+│   └── migrations/
+│       ├── 20260928000001_initial_schema.sql # Core relational tables
+│       └── 20260928000002_rls_policies.sql   # Strict Row Level Security
 ├── utils/                        # Logging & error handling foundations
 │   ├── __init__.py
 │   ├── exceptions.py             # Structured application exception hierarchy
 │   └── logger.py                 # Structured logger with secret scrubbing filter
 ├── agents/                       # Specialized travel domain agents (Phases 4 & 5)
 ├── graph/                        # LangGraph orchestration state machine (Phase 4)
-├── repositories/                 # Data access layer (Phase 3)
 ├── guardrails/                   # Input, tool & output safety guardrails (Phase 11)
 ├── mcp/                          # Model Context Protocol servers & clients (Phase 7)
 ├── rag/                          # pgvector RAG domain knowledge base (Phase 9)
 ├── evaluation/                   # Automated evaluation & benchmark datasets (Phase 16)
 ├── tests/                        # Comprehensive test suite (pytest)
+│   ├── test_auth.py              # Supabase Auth and session tests
 │   ├── test_config.py            # Environment & settings loading tests
 │   ├── test_health.py            # Health status & component checks
 │   ├── test_logger_exceptions.py # Secret scrubbing & exception hierarchy tests
 │   ├── test_models.py            # Pydantic travel schema validation tests
+│   ├── test_repositories.py      # Repository CRUD & user data isolation tests
+│   ├── test_schema_sql.py        # SQL migration & RLS policy verification tests
 │   ├── test_supabase.py          # Supabase service & DEMO_MODE fallback tests
 │   ├── test_ui_form.py           # Travel intake form validation tests
 │   └── test_ui_state.py          # Session state & navigation tests
@@ -246,7 +262,7 @@ The platform is developed in **18 distinct phases**:
 - [x] **Phase 0: Project Blueprint** *(Completed)*
 - [x] **Phase 1: Project Foundation & Configuration** *(Completed)*
 - [x] **Phase 2: Streamlit UI Foundation** *(Completed)*
-- [ ] **Phase 3: Supabase Integration (PostgreSQL, Auth & RLS)**
+- [x] **Phase 3: Supabase Integration (PostgreSQL, Auth & RLS)** *(Completed)*
 - [ ] **Phase 4: LangGraph Core Engine & Planner Agent**
 - [ ] **Phase 5: Specialized Mock Domain Agents**
 - [ ] **Phase 6: Budget Engine & Validator/Safety Agent (Pure Python)**

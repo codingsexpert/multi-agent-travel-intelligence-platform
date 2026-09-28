@@ -7,6 +7,11 @@ from app.state.session import (
     clear_current_trip,
     navigate_to,
     add_message,
+    get_current_user,
+    set_current_user,
+    get_current_conversation_id,
+    set_current_conversation_id,
+    DEMO_USER,
 )
 
 __all__ = [
@@ -16,4 +21,9 @@ __all__ = [
     "clear_current_trip",
     "navigate_to",
     "add_message",
+    "get_current_user",
+    "set_current_user",
+    "get_current_conversation_id",
+    "set_current_conversation_id",
+    "DEMO_USER",
 ]

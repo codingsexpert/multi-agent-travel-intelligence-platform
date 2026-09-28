@@ -1,4 +1,4 @@
-"""New trip creation and structured travel requirement intake form."""
+"""New trip creation and structured travel requirement intake form with Supabase persistence."""
 
 from datetime import date, timedelta
 import streamlit as st
@@ -8,8 +8,14 @@ from models.travel_request import (
     TravelerPreferences,
     TripConstraints,
 )
-from app.state.session import set_current_trip, get_current_trip
+from app.state.session import (
+    set_current_trip,
+    get_current_trip,
+    get_current_user,
+    set_current_conversation_id,
+)
 from app.components.trip_summary_card import render_trip_summary_card
+from repositories import trip_repository, conversation_repository, message_repository
 
 PREFERENCE_OPTIONS = [
     "Food",
@@ -43,14 +49,15 @@ CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "INR"]
 
 
 def render_new_trip_page() -> None:
-    """Render structured trip intake form with Pydantic validation."""
+    """Render structured trip intake form with Pydantic validation and repository persistence."""
     st.title("Plan a New Trip")
     st.markdown(
-        "Specify your travel route, timing, budget, and personal preferences. All inputs are strictly validated against domain schemas before orchestration."
+        "Specify your travel route, timing, budget, and personal preferences. All inputs are strictly validated against domain schemas before persistence."
     )
 
     st.markdown("---")
 
+    current_user = get_current_user()
     today = date.today()
 
     with st.form("new_trip_form"):
@@ -101,7 +108,6 @@ def render_new_trip_page() -> None:
     if submitted:
         # Step 1: Validate input using Pydantic models
         try:
-            # Map travel style to pace
             style_pace_map = {
                 "Budget": "moderate",
                 "Balanced": "moderate",
@@ -110,7 +116,6 @@ def render_new_trip_page() -> None:
             }
             pace = style_pace_map.get(travel_style, "moderate")
 
-            # Extract must-include landmarks from free text if specified
             must_include_items = []
             if additional_notes.strip():
                 must_include_items.append(additional_notes.strip()[:100])
@@ -136,18 +141,67 @@ def render_new_trip_page() -> None:
                 ),
             )
 
-            # Step 2: Store the request in Streamlit session state
-            set_current_trip(travel_req)
+            # Step 2: Persist trip and associated preferences
+            trip_payload = {
+                "origin": travel_req.origin,
+                "destination": travel_req.destination,
+                "start_date": travel_req.start_date,
+                "end_date": travel_req.end_date,
+                "travelers": travel_req.travelers,
+                "budget": travel_req.budget,
+                "currency": travel_req.currency,
+                "status": "DRAFT",
+            }
+            preferences_payload = {
+                "preferences": travel_req.preferences.interests,
+                "travel_style": travel_style,
+                "accommodation_preference": accommodation,
+                "additional_requirements": additional_notes.strip(),
+            }
 
-            # Step 3: Show structured summary of request
-            st.success("✅ Travel request validated and registered into session state!")
-
-            # Step 4: Show message that LangGraph planning workflow will be connected in a later phase
-            st.info(
-                "ℹ️ **LangGraph Planning Workflow Connection**: The multi-agent LangGraph orchestrator (Planner, Flight, Hotel, Activity, and Budget agents) will be connected in Phase 4 & Phase 5. No fake itinerary data has been generated."
+            created_trip = trip_repository.create_trip(
+                user_id=current_user["id"],
+                trip_data=trip_payload,
+                preferences_data=preferences_payload,
             )
 
-            st.markdown("### Submitted Request Summary")
+            # Step 3: Create associated conversation thread
+            conv_title = f"Trip to {travel_req.destination} ({travel_req.start_date})"
+            conv = conversation_repository.create_conversation(
+                user_id=current_user["id"],
+                trip_id=created_trip["id"],
+                title=conv_title,
+            )
+
+            # Step 4: Store initial user travel request as initial message
+            msg_content = (
+                f"Trip Request: {travel_req.origin} to {travel_req.destination}, "
+                f"{travel_req.start_date} to {travel_req.end_date} for {travel_req.travelers} traveler(s). "
+                f"Budget: {travel_req.currency} {travel_req.budget:,.2f}. "
+                f"Interests: {', '.join(selected_interests) if selected_interests else 'General'}. "
+                f"Notes: {additional_notes or 'None'}"
+            )
+            message_repository.create_message(
+                conversation_id=conv["id"],
+                role="user",
+                content=msg_content,
+            )
+
+            # Step 5: Update session state
+            set_current_trip(travel_req, trip_id=created_trip["id"])
+            set_current_conversation_id(conv["id"])
+
+            # Step 6: User feedback
+            if created_trip.get("is_demo"):
+                st.warning("⚠️ **Demo data — not persisted**: Running in DEMO_MODE without Supabase credentials. Trip stored in temporary in-memory mock repository.")
+            else:
+                st.success(f"✅ Trip successfully saved to Supabase! (Trip ID: `{created_trip['id']}`)")
+
+            st.info(
+                "ℹ️ **LangGraph Planning Workflow**: Orchestrator will be connected in Phase 4. Conversation thread initialized."
+            )
+
+            st.markdown("### Submitted Trip Overview")
             render_trip_summary_card(travel_req)
 
         except PydanticValidationError as e:
@@ -156,9 +210,9 @@ def render_new_trip_page() -> None:
                 field = " -> ".join(str(loc) for loc in err["loc"])
                 st.write(f"• **{field}**: {err['msg']}")
         except Exception as e:
-            st.error(f"❌ Unexpected Error: {str(e)}")
+            st.error(f"❌ Error persisting trip: {str(e)}")
 
-    # If there is already an active trip in session state and form was not just submitted, display it
+    # Current active trip display
     elif get_current_trip() is not None:
         st.markdown("---")
         st.markdown("### Current Active Trip in Session")
