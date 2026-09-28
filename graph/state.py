@@ -1,7 +1,8 @@
 """LangGraph core state definition for multi-agent travel intelligence platform."""
 
+import operator
 from enum import Enum
-from typing import TypedDict, Optional, List, Dict, Any
+from typing import TypedDict, Optional, List, Dict, Any, Annotated
 
 
 class WorkflowStatus(str, Enum):
@@ -10,7 +11,11 @@ class WorkflowStatus(str, Enum):
     INITIALIZING = "INITIALIZING"
     PLANNING = "PLANNING"
     NEEDS_CLARIFICATION = "NEEDS_CLARIFICATION"
+    RUNNING_SPECIALIZED_AGENTS = "RUNNING_SPECIALIZED_AGENTS"
+    PARTIAL_RESULTS = "PARTIAL_RESULTS"
+    SPECIALIZED_AGENTS_COMPLETED = "SPECIALIZED_AGENTS_COMPLETED"
     READY_FOR_SPECIALIZED_AGENTS = "READY_FOR_SPECIALIZED_AGENTS"
+    READY_FOR_VALIDATION = "READY_FOR_VALIDATION"
     FAILED = "FAILED"
     COMPLETED = "COMPLETED"
 
@@ -19,7 +24,7 @@ class TravelState(TypedDict, total=False):
     """Central LangGraph state passed between all reasoning and specialized agents.
 
     Maintains session context, extracted travel requirements, validation constraints,
-    clarification dialogues, future sub-agent deliverables, and observability traces.
+    clarification dialogues, specialized agent deliverables, and observability traces.
     """
 
     # --- Session & Identity Context ---
@@ -51,10 +56,10 @@ class TravelState(TypedDict, total=False):
     clarification_required: bool
     clarification_questions: List[str]
     planner_result: Optional[Dict[str, Any]]
-    warnings: List[str]
-    errors: List[str]
+    warnings: Annotated[List[str], operator.add]
+    errors: Annotated[List[str], operator.add]
 
-    # --- Future-Ready Agent Deliverables (Phases 5-11) ---
+    # --- Specialized Agent Deliverables (Phase 5) ---
     flight_options: List[Dict[str, Any]]
     hotel_options: List[Dict[str, Any]]
     activities: List[Dict[str, Any]]
@@ -66,7 +71,7 @@ class TravelState(TypedDict, total=False):
     sources: List[Dict[str, Any]]
 
     # --- Observability, Guardrails & Execution Tracing ---
-    agent_runs: List[Dict[str, Any]]
+    agent_runs: Annotated[List[Dict[str, Any]], operator.add]
     tool_calls: List[Dict[str, Any]]
     retry_count: int
     graph_step_count: int

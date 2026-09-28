@@ -82,8 +82,6 @@ def planner_node(state: TravelState) -> Dict[str, Any]:
         "is_demo": planner_result.is_demo,
         "clarification_required": planner_result.clarification_required,
     }
-    agent_runs = list(state.get("agent_runs", [])) + [run_record]
-
     # Return clean state delta
     return {
         "graph_step_count": current_step,
@@ -106,6 +104,6 @@ def planner_node(state: TravelState) -> Dict[str, Any]:
         "clarification_questions": planner_result.clarification_questions,
         "planner_result": planner_result.model_dump(),
         "warnings": all_warnings,
-        "agent_runs": agent_runs,
+        "agent_runs": [run_record],
         "is_demo": planner_result.is_demo,
     }

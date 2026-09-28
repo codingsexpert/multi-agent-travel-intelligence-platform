@@ -127,37 +127,41 @@ stateDiagram-v2
     OutputGuardrail --> [*]
 ```
 
-### 3.1 Phase 4 Workflow Engine & Planner Architecture
+### 3.1 Phase 5 Multi-Agent Workflow Engine
 
-Phase 4 establishes the core LangGraph state machine and the first reasoning node (Planner Agent):
+Phase 5 extends the LangGraph state machine into a concurrent multi-agent architecture featuring 5 specialized domain agents:
 
 ```mermaid
 graph TD
     START([START]) --> Planner[Planner Agent]
     Planner --> Check{Requirements Complete?}
     Check -- No --> Clarification[Clarification Node]
-    Check -- Yes --> Ready[Ready for Specialized Agents]
     Clarification --> END([END])
-    Ready --> END([END])
+    Check -- Yes --> FanOut[Parallel Dispatch]
+    FanOut --> Flight[Flight Agent]
+    FanOut --> Hotel[Hotel Agent]
+    FanOut --> Activity[Activity Agent]
+    FanOut --> Weather[Weather Agent]
+    Flight --> Research[Research Agent]
+    Hotel --> Research
+    Activity --> Research
+    Weather --> Research
+    Research --> END([END])
 ```
 
-#### Core Components & Responsibilities
-1. **TravelState Schema (`graph/state.py`)**:
-   - Central `TypedDict` capturing identity context (`user_id`, `trip_id`, `conversation_id`, `original_request`), normalized requirements (`origin`, `destination`, `start_date`, `end_date`, `duration`, `travelers`, `budget`, `currency`), preferences (`interests`, `travel_style`, `accommodation_preference`, `food_preferences`, `constraints`), execution state (`planning_status`, `clarification_required`, `clarification_questions`, `warnings`, `errors`), and future agent slots (`flight_options`, `hotel_options`, `activities`, `weather`, `budget_breakdown`, `itinerary`).
-2. **Planner Agent Node (`agents/planner.py`)**:
-   - Reads arbitrary natural language travel requests (multilingual, English, Hinglish).
-   - Extracts structured parameters, detects missing critical requirements, and identifies conflicting constraints.
-   - Enforces loop protection (`MAX_GRAPH_STEPS = 10`) and retry limits (`MAX_PLANNER_RETRIES = 2`).
-   - Does **NOT** search the web, book flights, or synthesize final itineraries (reserved for specialized agents in subsequent phases).
-3. **Clarification Node (`agents/clarification.py`)**:
-   - Routes incomplete requests to `NEEDS_CLARIFICATION`, formatting structured, user-friendly clarification questions.
-4. **Structured Output (`models/planner.py`)**:
-   - Validated through Pydantic schemas: `NormalizedTravelRequest`, `ClarificationRequest`, and `PlannerResult`.
-5. **DEMO_MODE / Offline Execution (`services/llm_service.py`)**:
-   - When running without live LLM credentials or with `DEMO_MODE=true`, routes to `DemoPlannerExtractor`.
-   - Tags outputs with `is_demo=True` and clearly identifies assumptions without simulating artificial responses.
-6. **Future Agent Extensibility**:
-   - Future domain agents (Flight, Hotel, Activity, Weather, Research, Budget) will fan out from `READY_FOR_SPECIALIZED_AGENTS` without altering the initial intake graph.
+#### Core Components & Architectural Principles
+1. **Shared State Architecture (`TravelState`)**:
+   - Specialized agents **never directly invoke one another**. All state transfer, findings, and metadata are mediated exclusively through the centralized `TravelState`.
+   - Distinct domain keys (`flight_options`, `hotel_options`, `activities`, `weather`, `research_results`) ensure zero concurrent write collisions during parallel fan-out.
+   - Shared diagnostic arrays (`agent_runs`, `warnings`, `errors`) utilize `Annotated[List[...], operator.add]` reducers for thread-safe state accumulation.
+2. **Parallel Fan-Out & Convergence**:
+   - Once requirements are validated, LangGraph triggers `Flight`, `Hotel`, `Activity`, and `Weather` in parallel.
+   - All 4 branches converge into the `Research` node, which compiles destination cultural intelligence and evaluates overall status (`READY_FOR_VALIDATION` or `PARTIAL_RESULTS`).
+3. **Failure Isolation**:
+   - Every specialized agent is executed through `execute_agent_safely` in `agents/base_agent.py`.
+   - If an individual agent throws an exception (e.g. simulated weather sensor failure), the graph does **not** crash. The failure is recorded in `agent_runs`, a warning is added, and the workflow transitions to `PARTIAL_RESULTS` without fabricating data.
+4. **Strict `DEMO_DATA` Boundaries**:
+   - In Phase 5, all candidate deliverables are generated using deterministic mock engines and explicitly flagged with `demo_data: True` and clear source attribution (`[DEMO_DATA]`). Live API integrations arrive in Phases 7 & 8.
 
 ### 3.2 Graph Structural Design
 - **Deterministic Routing**: Conditional edges check typed flags in the graph state rather than relying on LLM routing decisions for state transitions.

@@ -206,8 +206,31 @@ def render_new_trip_page() -> None:
                     st.markdown(f"• {q}")
                 st.caption("💬 Head to the **Conversation** page to provide these details to the assistant.")
             else:
-                st.success("✅ **Planning requirements validated.** Status: `READY_FOR_SPECIALIZED_AGENTS`")
-                st.caption("Next step: Specialized agents (Flights, Hotels, Activities) will be orchestrated in subsequent phases.")
+                status_text = planning_state.get("planning_status", "READY_FOR_VALIDATION")
+                st.success(f"✅ **Multi-Agent Travel Analysis Complete.** (Status: `{status_text}`)")
+
+                st.markdown("#### Specialized Agents Execution Progress (DEMO DATA)")
+                runs = planning_state.get("agent_runs", [])
+                run_status_map = {r.get("agent_name"): r.get("status") for r in runs}
+
+                prog_col1, prog_col2, prog_col3 = st.columns(3)
+                with prog_col1:
+                    p_st = run_status_map.get("planner", "SUCCESS")
+                    f_st = run_status_map.get("flight", "SUCCESS")
+                    st.markdown(f"• **Planner Agent**: `✓ {p_st}`")
+                    st.markdown(f"• **Flight Agent**: `✓ {f_st}`")
+                with prog_col2:
+                    h_st = run_status_map.get("hotel", "SUCCESS")
+                    a_st = run_status_map.get("activity", "SUCCESS")
+                    st.markdown(f"• **Hotel Agent**: `✓ {h_st}`")
+                    st.markdown(f"• **Activity Agent**: `✓ {a_st}`")
+                with prog_col3:
+                    w_st = run_status_map.get("weather", "SUCCESS")
+                    r_st = run_status_map.get("research", "SUCCESS")
+                    st.markdown(f"• **Weather Agent**: `✓ {w_st}`")
+                    st.markdown(f"• **Research Agent**: `✓ {r_st}`")
+
+                st.caption("🔍 Navigate to **Flights**, **Hotels**, **Activities**, **Weather**, or **Agent Trace** in the sidebar to inspect domain deliverables.")
 
             st.markdown("### Submitted Trip Overview")
             render_trip_summary_card(travel_req)
@@ -224,4 +247,22 @@ def render_new_trip_page() -> None:
     elif get_current_trip() is not None:
         st.markdown("---")
         st.markdown("### Current Active Trip in Session")
-        render_trip_summary_card(get_current_trip())
+        active_trip_obj = get_current_trip()
+        render_trip_summary_card(active_trip_obj)
+
+        active_trip_id = st.session_state.get("current_trip_id")
+        if st.button("⚡ Run / Re-run Travel Analysis", type="primary", use_container_width=True):
+            with st.spinner("Executing Multi-Agent Workflow (Planner, Flight, Hotel, Activity, Weather, Research)..."):
+                analysis_prompt = (
+                    f"Trip from {active_trip_obj.origin} to {active_trip_obj.destination} "
+                    f"from {active_trip_obj.start_date} to {active_trip_obj.end_date} for {active_trip_obj.travelers} traveler(s), "
+                    f"budget {active_trip_obj.currency} {active_trip_obj.budget:,.2f}."
+                )
+                run_travel_planning(
+                    user_request=analysis_prompt,
+                    user_id=current_user["id"],
+                    trip_id=active_trip_id,
+                    session_state=st.session_state,
+                )
+            st.success("✅ Multi-Agent Workflow Executed! Check Flights, Hotels, Activities, and Weather in the sidebar.")
+            st.rerun()

@@ -175,23 +175,33 @@ This development plan breaks down the construction of the platform into **18 dis
 
 ---
 
-## Phase 5: Specialized Mock Domain Agents
-- **Objective**: Implement Flight, Hotel, Activity, Weather, and Research agents with deterministic mock engines for offline development and testing.
+## Phase 5: Specialized Mock Domain Agents (Completed)
+- **Objective**: Implement Flight, Hotel, Activity, Weather, and Research agents with deterministic mock engines, parallel execution, failure isolation, and Pydantic schemas.
 - **Implementation Tasks**:
-  1. Build realistic deterministic data generators in `src/mock_data/` (flights, hotels, activities, weather datasets).
-  2. Implement Flight Agent (`src/agents/flight_agent.py`) returning candidate flight options.
-  3. Implement Hotel Agent (`src/agents/hotel_agent.py`) selecting accommodations matching location and budget.
-  4. Implement Activity Agent (`src/agents/activity_agent.py`) curating itinerary experiences.
-  5. Implement Weather Agent (`src/agents/weather_agent.py`) retrieving climate forecasts.
-  6. Wire nodes in parallel fan-out inside `src/graph/workflow.py`.
+  1. Built strongly typed Pydantic models in `models/specialized_options.py`: `FlightOption`, `HotelOption`, `ActivityOption`, `WeatherObservation`, `DestinationResearch`.
+  2. Built standardized base agent execution wrapper in `agents/base_agent.py` (`execute_agent_safely`) providing uniform telemetry, timing, and failure isolation.
+  3. Implemented 5 specialized domain agents in `agents/`:
+     - `FlightAgent` (`agents/flight_agent.py`): Aviation route planning and fare estimation with mock catalog.
+     - `HotelAgent` (`agents/hotel_agent.py`): Lodging discovery, neighborhood scoring, and nightly rates.
+     - `ActivityAgent` (`agents/activity_agent.py`): Point-of-interest curation and dining experiences matching interests.
+     - `WeatherAgent` (`agents/weather_agent.py`): Climatological forecasts, precipitation risks, and advisory warnings.
+     - `ResearchAgent` (`agents/research_agent.py`): Destination overview, cultural etiquette, travel tips, and customs.
+  4. Updated LangGraph state machine in `graph/workflow.py`: Planner conditionally fans out in parallel to Flight, Hotel, Activity, and Weather nodes, converging into the Research Agent before `END`.
+  5. Implemented failure isolation: individual agent failures are safely caught, recorded as `FAILED` in `agent_runs`, appended to `warnings`, and transition workflow status to `PARTIAL_RESULTS` without crashing the graph.
+  6. Updated Streamlit UI across `app/pages/flights.py`, `app/pages/hotels.py`, `app/pages/activities.py`, `app/pages/weather.py`, `app/pages/sources.py`, `app/pages/agent_trace.py`, and `app/pages/new_trip.py`.
+  7. Added comprehensive test coverage across `tests/test_specialized_agents.py` and `tests/test_multi_agent_workflow.py`.
 - **Files / Components**:
-  - `src/mock_data/flights.json`, `src/mock_data/hotels.json`, `src/mock_data/activities.json`, `src/mock_data/weather.json`
-  - `src/agents/flight_agent.py`, `src/agents/hotel_agent.py`, `src/agents/activity_agent.py`, `src/agents/weather_agent.py`
-  - `tests/test_domain_agents.py`
+  - `models/specialized_options.py`, `models/__init__.py`
+  - `agents/base_agent.py`, `agents/flight_agent.py`, `agents/hotel_agent.py`, `agents/activity_agent.py`, `agents/weather_agent.py`, `agents/research_agent.py`, `agents/__init__.py`
+  - `graph/state.py`, `graph/workflow.py`
+  - `services/planning_service.py`
+  - `app/pages/flights.py`, `app/pages/hotels.py`, `app/pages/activities.py`, `app/pages/weather.py`, `app/pages/sources.py`, `app/pages/agent_trace.py`, `app/pages/new_trip.py`
+  - `tests/test_specialized_agents.py`, `tests/test_multi_agent_workflow.py`
 - **Testing Requirements**:
-  - Verify parallel execution of domain agents in the graph state machine without race conditions.
+  - 70 unit and integration tests passing (`pytest -v`).
+  - Verified parallel execution, failure isolation with `PARTIAL_RESULTS`, schema validation, demo markers, and telemetry.
 - **Expected Output**:
-  - Graph populates state with flight, hotel, activity, and weather candidates.
+  - Graph populates state with flight, hotel, activity, weather, and research deliverables, terminating with `READY_FOR_VALIDATION` or `PARTIAL_RESULTS`.
 
 ---
 

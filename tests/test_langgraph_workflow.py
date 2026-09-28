@@ -17,16 +17,18 @@ def test_langgraph_complete_workflow_execution():
 
     final_state = travel_graph.invoke(initial_state)
 
-    assert final_state["planning_status"] == WorkflowStatus.READY_FOR_SPECIALIZED_AGENTS.value
+    assert final_state["planning_status"] == WorkflowStatus.READY_FOR_VALIDATION.value
     assert final_state["clarification_required"] is False
     assert final_state["destination"] == "Japan"
     assert final_state["origin"] == "Delhi"
     assert final_state["travelers"] == 2
     assert final_state["budget"] == 150000.0
     assert final_state["currency"] == "INR"
-    assert final_state["graph_step_count"] == 1
-    assert len(final_state["agent_runs"]) == 1
-    assert final_state["agent_runs"][0]["agent_name"] == "planner"
+    assert len(final_state["agent_runs"]) >= 6
+    agent_names = [r["agent_name"] for r in final_state["agent_runs"]]
+    assert "planner" in agent_names
+    assert "flight" in agent_names
+    assert "research" in agent_names
 
 
 def test_langgraph_clarification_routing():

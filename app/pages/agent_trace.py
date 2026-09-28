@@ -6,38 +6,38 @@ PLANNED_AGENTS = [
     {
         "name": "Planner Agent",
         "role": "Deconstructs natural language inputs, establishes constraints, and coordinates graph flow.",
-        "phase": "Phase 4",
-        "model": "gpt-4o",
+        "phase": "Phase 4 (Active)",
+        "model": "gpt-4o / DemoExtractor",
     },
     {
         "name": "Flight Agent",
-        "role": "Searches, filters, and selects flights matching dates, class, and transit rules.",
-        "phase": "Phase 5",
-        "model": "gpt-4o-mini",
+        "role": "Discovers and filters flights matching dates, class, and transit rules.",
+        "phase": "Phase 5 (Active)",
+        "model": "Mock Flight Index [DEMO]",
     },
     {
         "name": "Hotel Agent",
         "role": "Identifies lodging matching budget, guest capacity, and geographic radius.",
-        "phase": "Phase 5",
-        "model": "gpt-4o-mini",
+        "phase": "Phase 5 (Active)",
+        "model": "Mock Hospitality Index [DEMO]",
     },
     {
         "name": "Activity Agent",
         "role": "Curates daily experiences, meals, and cultural visits based on pace.",
-        "phase": "Phase 5",
-        "model": "gpt-4o-mini",
+        "phase": "Phase 5 (Active)",
+        "model": "Mock Experiences Index [DEMO]",
     },
     {
         "name": "Weather Agent",
         "role": "Evaluates seasonal trends and forecasts to identify outdoor hazards.",
-        "phase": "Phase 5",
-        "model": "gpt-4o-mini",
+        "phase": "Phase 5 (Active)",
+        "model": "Mock Climatology [DEMO]",
     },
     {
         "name": "Research Agent",
-        "role": "Retrieves visa rules, local customs, and public transit guidelines via RAG & search.",
-        "phase": "Phase 9 & 10",
-        "model": "gpt-4o-mini",
+        "role": "Synthesizes destination etiquette, tips, and customs into shared state.",
+        "phase": "Phase 5 (Active)",
+        "model": "Mock Knowledge Graph [DEMO]",
     },
     {
         "name": "Budget Agent",
@@ -61,37 +61,73 @@ PLANNED_AGENTS = [
 
 
 def render_agent_trace_page() -> None:
-    """Render future-ready multi-agent execution and observability trace page."""
+    """Render multi-agent execution telemetry and active trace table."""
     st.title("Agent Execution Trace & Telemetry")
     st.markdown(
-        "Real-time visibility into the LangGraph state machine, individual agent reasoning, tool invocations, token costs, and execution latencies."
+        "Real-time visibility into the LangGraph state machine, individual agent reasoning, tool invocations, and execution latencies."
     )
 
     st.markdown("---")
 
-    # Metrics Summary Row (Placeholders)
+    travel_state = st.session_state.get("travel_state", {})
+    agent_runs = travel_state.get("agent_runs", [])
+    workflow_status = st.session_state.get("workflow_status", travel_state.get("planning_status", "IDLE"))
+
+    # Aggregated Metrics
+    total_runs = len(agent_runs)
+    successful_runs = sum(1 for r in agent_runs if r.get("status") == "SUCCESS")
+    failed_runs = sum(1 for r in agent_runs if r.get("status") == "FAILED")
+    total_latency_ms = sum(r.get("duration_ms", 0) for r in agent_runs)
+
     st.markdown("### Aggregated Telemetry")
     m1, m2, m3, m4, m5 = st.columns(5)
     with m1:
-        st.metric(label="Active Workflow", value=st.session_state.get("workflow_status", "IDLE"))
+        st.metric(label="Workflow Status", value=workflow_status)
     with m2:
-        st.metric(label="Execution Time", value="-- ms")
+        st.metric(label="Total Executed Agents", value=str(total_runs))
     with m3:
-        st.metric(label="Tool Invocations", value="0")
+        st.metric(label="Successful Steps", value=str(successful_runs))
     with m4:
-        st.metric(label="Tokens Consumed", value="0")
+        st.metric(label="Total Latency", value=f"{total_latency_ms:,.1f} ms" if total_latency_ms > 0 else "-- ms")
     with m5:
-        st.metric(label="Estimated Cost", value="$0.000")
-
-    st.info(
-        "ℹ️ **Trace Status**: All agents currently have status **Not started**. Live step-by-step tracing, tool calls, retry counters, and LangSmith spans will be connected in Phase 4 & Phase 14."
-    )
+        mode_val = "DEMO DATA" if travel_state.get("is_demo", True) else "LIVE API"
+        st.metric(label="Execution Mode", value=mode_val)
 
     st.markdown("---")
-    st.markdown("### Planned Agents Roster (9 Agents)")
+    st.markdown("### Active Execution Trace Table")
+
+    if not agent_runs:
+        st.info("ℹ️ **No Active Agent Trace Yet**: Submit a trip request to view live agent execution steps and telemetry.")
+    else:
+        trace_data = []
+        for run in agent_runs:
+            agent_name = run.get("agent_name", "Unknown").title()
+            status = run.get("status", "UNKNOWN")
+            duration_ms = run.get("duration_ms", 0.0)
+            duration_s = f"{duration_ms / 1000:.2f}s" if duration_ms >= 1000 else f"{duration_ms:.1f}ms"
+            mode = "DEMO" if run.get("is_demo", True) else "LIVE"
+            step = run.get("step", 1)
+
+            trace_data.append({
+                "Agent": f"{agent_name} Agent",
+                "Status": status,
+                "Duration": duration_s,
+                "Mode": mode,
+                "Step": step,
+                "Error": run.get("error") or "None",
+            })
+
+        st.table(trace_data)
+
+    st.markdown("---")
+    st.markdown("### Multi-Agent Roster (9 Planned Agents)")
 
     for idx, agent in enumerate(PLANNED_AGENTS, 1):
         with st.container():
+            is_active = "Active" in agent["phase"]
+            status_color = "#4CAF50" if is_active else "#BDBDBD"
+            status_text = "Status: Implemented" if is_active else "Status: Pending Next Phase"
+
             st.markdown(
                 f"""
                 <div style="
@@ -107,18 +143,17 @@ def render_agent_trace_page() -> None:
                             font-size: 0.75rem;
                             padding: 3px 8px;
                             border-radius: 4px;
-                            background: rgba(158, 158, 158, 0.2);
-                            color: #BDBDBD;
+                            background: rgba(128, 128, 128, 0.15);
+                            color: {status_color};
+                            font-weight: 600;
                         ">
-                            Status: Not started
+                            {status_text}
                         </span>
                     </div>
                     <div style="color: #9E9E9E; font-size: 0.85rem; margin: 6px 0;">{agent['role']}</div>
                     <div style="display: flex; gap: 20px; font-size: 0.8rem; color: #78909C;">
-                        <span>Target Phase: <strong>{agent['phase']}</strong></span>
+                        <span>Lifecycle: <strong>{agent['phase']}</strong></span>
                         <span>Engine: <strong>{agent['model']}</strong></span>
-                        <span>Tool Calls: <strong>0</strong></span>
-                        <span>Retries: <strong>0</strong></span>
                     </div>
                 </div>
                 """,

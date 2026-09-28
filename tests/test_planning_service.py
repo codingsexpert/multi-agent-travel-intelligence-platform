@@ -53,16 +53,16 @@ def test_planning_service_complete_lifecycle_with_persistence():
     )
 
     # Assertions on state
-    assert state["planning_status"] == WorkflowStatus.READY_FOR_SPECIALIZED_AGENTS.value
+    assert state["planning_status"] == WorkflowStatus.READY_FOR_VALIDATION.value
     assert state["destination"] == "Tokyo"
-    assert session_state["workflow_status"] == WorkflowStatus.READY_FOR_SPECIALIZED_AGENTS.value
+    assert session_state["workflow_status"] == WorkflowStatus.READY_FOR_VALIDATION.value
 
     # Assertions on message repository
     messages = msg_repo.list_messages_for_conversation(conv["id"])
     assert len(messages) == 2
     assert messages[0]["role"] == "user"
     assert messages[1]["role"] == "assistant"
-    assert "Planning requirements validated" in messages[1]["content"]
+    assert "Specialized Travel Analysis Complete" in messages[1]["content"]
 
     # Assertions on agent runs
     runs = run_repo.list_runs_for_trip(trip["id"])

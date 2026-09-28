@@ -123,20 +123,41 @@ def run_travel_planning(
             if final_state.get("clarification_required"):
                 questions = final_state.get("clarification_questions", [])
                 assistant_text = "I need a few details before planning:\n\n" + "\n".join(questions)
-            elif final_state.get("planning_status") == WorkflowStatus.READY_FOR_SPECIALIZED_AGENTS.value:
+            elif final_state.get("planning_status") in [
+                WorkflowStatus.READY_FOR_VALIDATION.value,
+                WorkflowStatus.SPECIALIZED_AGENTS_COMPLETED.value,
+                WorkflowStatus.PARTIAL_RESULTS.value,
+                WorkflowStatus.READY_FOR_SPECIALIZED_AGENTS.value,
+            ]:
                 dest = final_state.get("destination", "your destination")
                 orig = final_state.get("origin", "your departure")
                 dur = final_state.get("duration")
                 curr = final_state.get("currency", "USD")
                 bgt = final_state.get("budget")
                 budget_str = f"{curr} {bgt:,.2f}" if bgt is not None else "Unspecified"
+
+                flights_count = len(final_state.get("flight_options", []))
+                hotels_count = len(final_state.get("hotel_options", []))
+                activities_count = len(final_state.get("activities", []))
+                has_weather = bool(final_state.get("weather"))
+                has_research = bool(final_state.get("research_results"))
+
+                status_label = (
+                    "✅ **Specialized Travel Analysis Complete**"
+                    if final_state.get("planning_status") != WorkflowStatus.PARTIAL_RESULTS.value
+                    else "⚠️ **Partial Travel Analysis Completed**"
+                )
+
                 assistant_text = (
-                    f"✅ **Planning requirements validated.**\n\n"
-                    f"• **Route**: {orig} → {dest}\n"
-                    f"• **Duration**: {dur} days\n"
-                    f"• **Travelers**: {final_state.get('travelers')}\n"
-                    f"• **Budget Limit**: {budget_str}\n\n"
-                    f"Status: `{final_state.get('planning_status')}`. Next step: Specialized agents (Flights, Hotels, Activities) will be orchestrated in subsequent phases."
+                    f"{status_label} (Status: `{final_state.get('planning_status')}`)\n\n"
+                    f"• **Route**: {orig} → {dest} ({dur or 'N/A'} days, {final_state.get('travelers') or 1} traveler(s))\n"
+                    f"• **Budget Limit**: {budget_str}\n"
+                    f"• **Flights Discovered**: {flights_count} option(s) [DEMO_DATA]\n"
+                    f"• **Accommodations Found**: {hotels_count} property option(s) [DEMO_DATA]\n"
+                    f"• **Experiences Curated**: {activities_count} activities [DEMO_DATA]\n"
+                    f"• **Climatological Context**: {'Available' if has_weather else 'Unavailable'}\n"
+                    f"• **Destination Intelligence**: {'Compiled' if has_research else 'Unavailable'}\n\n"
+                    f"Visit the **Flights**, **Hotels**, **Activities**, **Weather**, and **Agent Trace** pages to inspect detailed agent deliverables."
                 )
             else:
                 assistant_text = f"Planning status: {final_state.get('planning_status')}."

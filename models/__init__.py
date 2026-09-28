@@ -13,6 +13,14 @@ from models.planner import (
     PlannerResult,
 )
 
+from models.specialized_options import (
+    FlightOption,
+    HotelOption,
+    ActivityOption,
+    WeatherObservation,
+    DestinationResearch,
+)
+
 __all__ = [
     "TravelRequest",
     "TravelerPreferences",
@@ -21,4 +29,9 @@ __all__ = [
     "NormalizedTravelRequest",
     "ClarificationRequest",
     "PlannerResult",
+    "FlightOption",
+    "HotelOption",
+    "ActivityOption",
+    "WeatherObservation",
+    "DestinationResearch",
 ]

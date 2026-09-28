@@ -47,12 +47,10 @@ def clarification_node(state: TravelState) -> Dict[str, Any]:
         "questions_count": len(questions),
     }
 
-    agent_runs = list(state.get("agent_runs", [])) + [run_record]
-
     return {
         "graph_step_count": current_step,
         "planning_status": WorkflowStatus.NEEDS_CLARIFICATION.value,
         "clarification_required": True,
         "clarification_questions": questions,
-        "agent_runs": agent_runs,
+        "agent_runs": [run_record],
     }

@@ -4,32 +4,47 @@ import streamlit as st
 
 
 def render_sources_page() -> None:
-    """Render verified knowledge sources and citation references."""
-    st.title("Information Sources & Citations")
+    """Render verified knowledge sources, destination research, and citation references."""
+    st.title("Information Sources & Destination Research")
     st.markdown(
-        "Grounding citations retrieved from Supabase pgvector RAG, verified live travel APIs, and real-time web search."
+        "Destination cultural etiquette, travel logistics, and grounding knowledge compiled by the Research Agent."
     )
 
     st.markdown("---")
 
-    # Categories tabs
-    tab_rag, tab_web, tab_api = st.tabs([
-        "📚 pgvector RAG Knowledge Base",
-        "🌐 Live Web Search Results",
-        "🔌 External Travel APIs (MCP)",
-    ])
+    travel_state = st.session_state.get("travel_state", {})
+    research = travel_state.get("research_results")
 
-    with tab_rag:
-        st.subheader("Curated Destination Knowledge")
-        st.caption("Target: Static visa guides, cultural customs, seasonal patterns, neighborhood profiles")
-        st.info("No sources available yet.")
+    if not research:
+        st.info(
+            "ℹ️ **No Destination Research Compiled Yet**: Plan a trip from **New Trip** or **Conversation** to execute the multi-agent workflow and compile destination intelligence."
+        )
+        return
 
-    with tab_web:
-        st.subheader("Live Web Disruption & Event Radar")
-        st.caption("Target: Tavily / Brave Search live queries, terminal updates, local festival dates")
-        st.info("No sources available yet.")
+    st.success(f"📚 **Destination Research: {research.get('destination', 'Target Destination')}**")
+    st.caption("⚠️ **DEMO_DATA**: Synthesized by the mock Research Agent from controlled knowledge fixtures. Real-time RAG and Web Search will be connected in Phases 9 & 10.")
 
-    with tab_api:
-        st.subheader("Direct Provider Feeds")
-        st.caption("Target: Amadeus Flight/Hotel inventory and OpenWeather 14-day forecasts")
-        st.info("No sources available yet.")
+    st.markdown("### Destination Overview")
+    st.write(research.get("destination_overview", "Overview unavailable."))
+
+    r_col1, r_col2 = st.columns(2)
+    with r_col1:
+        st.markdown("### 🏛️ Cultural Etiquette & Norms")
+        for item in research.get("cultural_notes", []):
+            st.markdown(f"• {item}")
+
+        st.markdown("### 🤝 Local Customs & Manners")
+        for item in research.get("local_customs", []):
+            st.markdown(f"• {item}")
+
+    with r_col2:
+        st.markdown("### 💡 Practical Travel Tips")
+        for item in research.get("travel_tips", []):
+            st.markdown(f"• {item}")
+
+        st.markdown("### ⚠️ Important Advisories")
+        for item in research.get("important_notes", []):
+            st.markdown(f"• {item}")
+
+    st.markdown("---")
+    st.caption(f"Sources Attributed: {', '.join(research.get('sources', []))}")

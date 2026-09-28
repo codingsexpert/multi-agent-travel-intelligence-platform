@@ -215,3 +215,17 @@ In Phase 4, we introduce the first agentic reasoning node: the Planner Agent. We
 5. **Loop and Retry Limits**: Execution is protected by `MAX_GRAPH_STEPS = 10` and `MAX_PLANNER_RETRIES = 2`.
 6. **Graceful DEMO_MODE Fallback**: When live LLM credentials are absent or in `DEMO_MODE=true`, `DemoPlannerExtractor` handles extraction deterministically, flagging outputs with `is_demo=True`.
 
+---
+
+## ADR-12: Multi-Agent Parallel Execution, Failure Isolation & Decoupled State
+
+### Context
+In Phase 5, the workflow expands from a single reasoning node into 5 specialized domain agents (Flight, Hotel, Activity, Weather, Research). We must prevent tight agent-to-agent coupling, eliminate concurrent state update collisions, and handle partial agent failures gracefully.
+
+### Decision
+1. **Decoupled State Communication**: Agents never call one another directly. All inputs and outputs flow through the centralized `TravelState`.
+2. **Parallel Fan-Out via Dedicated Keys**: Domain-specific keys (`flight_options`, `hotel_options`, `activities`, `weather`, `research_results`) isolate parallel writes, while shared diagnostic lists (`agent_runs`, `warnings`, `errors`) utilize `Annotated[List, operator.add]` reducers.
+3. **Failure Isolation**: Each agent executes wrapped in `execute_agent_safely`. If an individual agent encounters a network/sensor failure, the exception is caught, logged, recorded as `FAILED` in `agent_runs`, and appended to `warnings`. The workflow transitions to `PARTIAL_RESULTS` rather than aborting.
+4. **Deterministic Mock Catalog (`DEMO_DATA`)**: All candidate options are generated deterministically and explicitly marked with `demo_data: True` and mock catalog sources. No fake live availability is reported.
+
+
