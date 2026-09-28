@@ -2,12 +2,15 @@
 
 from datetime import date
 import pytest
+from config.settings import Settings
 from repositories.mock_store import MockDataStore
 from repositories.trip_repository import TripRepository
 from repositories.conversation_repository import ConversationRepository
 from repositories.message_repository import MessageRepository
 from repositories.agent_run_repository import AgentRunRepository
 from utils.exceptions import ValidationError
+
+DEMO_SETTINGS = Settings(_env_file=None, demo_mode=True)
 
 
 @pytest.fixture
@@ -20,10 +23,10 @@ def clean_store():
 @pytest.fixture
 def repositories(clean_store):
     """Instantiate repository classes bound to the isolated store."""
-    trip_repo = TripRepository(store=clean_store)
-    conv_repo = ConversationRepository(store=clean_store)
-    msg_repo = MessageRepository(store=clean_store)
-    run_repo = AgentRunRepository(store=clean_store)
+    trip_repo = TripRepository(store=clean_store, settings=DEMO_SETTINGS)
+    conv_repo = ConversationRepository(store=clean_store, settings=DEMO_SETTINGS)
+    msg_repo = MessageRepository(store=clean_store, settings=DEMO_SETTINGS)
+    run_repo = AgentRunRepository(store=clean_store, settings=DEMO_SETTINGS)
     return trip_repo, conv_repo, msg_repo, run_repo
 
 

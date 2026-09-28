@@ -1,11 +1,12 @@
-"""Unit tests for authentication service and session identity."""
-
+from config.settings import Settings
 from services.auth_service import AuthService, DEMO_USER_ID, DEMO_USER_EMAIL
+
+DEMO_SETTINGS = Settings(_env_file=None, demo_mode=True)
 
 
 def test_auth_service_demo_mode_defaults():
     """Verify default demo traveler identity in DEMO_MODE."""
-    auth = AuthService()
+    auth = AuthService(settings=DEMO_SETTINGS)
     session = {}
 
     user = auth.get_current_user(session)
@@ -17,7 +18,7 @@ def test_auth_service_demo_mode_defaults():
 
 def test_auth_service_demo_sign_in_and_out():
     """Verify mock sign-in and sign-out populate and clear session state."""
-    auth = AuthService()
+    auth = AuthService(settings=DEMO_SETTINGS)
     session = {}
 
     # Sign in
@@ -36,7 +37,7 @@ def test_auth_service_demo_sign_in_and_out():
 
 def test_auth_service_demo_sign_up():
     """Verify mock sign-up produces valid user structure."""
-    auth = AuthService()
+    auth = AuthService(settings=DEMO_SETTINGS)
     res = auth.sign_up("new.user@test.com", "secretpass", full_name="Alice Explorer")
     assert res["id"] is not None
     assert res["email"] == "new.user@test.com"
