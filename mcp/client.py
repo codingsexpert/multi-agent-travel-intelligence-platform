@@ -13,6 +13,17 @@ from models.mcp import (
 )
 from mcp.registry import MCPToolRegistry
 from mcp.security import MCPSecurityManager
+from mcp.providers.base import (
+    ProviderError,
+    ProviderConfigurationError,
+    ProviderAuthenticationError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+    ProviderNetworkError,
+    ProviderResponseValidationError,
+    set_execution_mode,
+    reset_execution_mode,
+)
 from utils.logger import logger
 
 
@@ -40,6 +51,25 @@ class MCPClient:
         Returns:
             MCPToolResult containing output data, latency, status, or structured error.
         """
+        token = set_execution_mode(is_demo)
+        try:
+            return cls._call_tool_impl(
+                agent_name=agent_name,
+                tool_name=tool_name,
+                arguments=arguments,
+                is_demo=is_demo,
+            )
+        finally:
+            reset_execution_mode(token)
+
+    @classmethod
+    def _call_tool_impl(
+        cls,
+        agent_name: str,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        is_demo: bool = True,
+    ) -> MCPToolResult:
         exec_id = f"mcp-{uuid.uuid4().hex[:8]}"
         start_time = time.time()
         retries_used = 0
@@ -155,6 +185,8 @@ class MCPClient:
                 # Execute tool handler
                 output_model = descriptor.handler(validated_input)
                 duration_ms = round((time.time() - start_time) * 1000, 2)
+                provider_name = getattr(output_model, "provider", None)
+                data_mode = getattr(output_model, "data_mode", "DEMO" if is_demo else "LIVE")
 
                 cls._record_call(
                     exec_id=exec_id,
@@ -164,7 +196,8 @@ class MCPClient:
                     duration_ms=duration_ms,
                     safe_args=safe_args,
                     retries=attempt,
-                    mode="DEMO" if is_demo else "LIVE",
+                    mode=data_mode,
+                    provider=provider_name,
                 )
 
                 return MCPToolResult(
@@ -172,13 +205,30 @@ class MCPClient:
                     tool_name=tool_name,
                     data=output_model.model_dump(),
                     latency_ms=duration_ms,
-                    mode="DEMO" if is_demo else "LIVE",
-                    demo_data=getattr(output_model, "demo_data", True),
+                    mode=data_mode,
+                    provider=provider_name,
+                    demo_data=getattr(output_model, "demo_data", is_demo),
                 )
             except TimeoutError as te:
                 last_exception = te
                 retries_used = attempt
                 logger.warning(f"[MCPClient] Attempt {attempt + 1} timed out for tool '{tool_name}'")
+            except ProviderRateLimitError as rle:
+                last_exception = rle
+                retries_used = attempt
+                logger.warning(f"[MCPClient] Rate limit on attempt {attempt + 1} for '{tool_name}': {str(rle)}")
+            except ProviderConfigurationError as pce:
+                # Non-retryable configuration failure (e.g. missing API keys in LIVE mode)
+                last_exception = pce
+                retries_used = attempt
+                logger.error(f"[MCPClient] Configuration error for '{tool_name}': {str(pce)}")
+                break
+            except ProviderAuthenticationError as pae:
+                # Non-retryable auth failure
+                last_exception = pae
+                retries_used = attempt
+                logger.error(f"[MCPClient] Authentication error for '{tool_name}': {str(pae)}")
+                break
             except Exception as e:
                 last_exception = e
                 retries_used = attempt
@@ -187,13 +237,44 @@ class MCPClient:
         # 5. Handle Failure / Retry Exhaustion
         duration_ms = round((time.time() - start_time) * 1000, 2)
         err_msg = f"Execution failed for tool '{tool_name}': {str(last_exception)}"
-        status = ToolExecutionStatus.TIMED_OUT if isinstance(last_exception, TimeoutError) else ToolExecutionStatus.FAILED
+
+        # Classify structured error codes
+        if isinstance(last_exception, (TimeoutError, ProviderTimeoutError)):
+            status = ToolExecutionStatus.TIMED_OUT
+            error_code = "TIMEOUT"
+            retryable = True
+        elif isinstance(last_exception, ProviderConfigurationError):
+            status = ToolExecutionStatus.FAILED
+            error_code = "PROVIDER_CONFIGURATION_ERROR"
+            retryable = False
+        elif isinstance(last_exception, ProviderAuthenticationError):
+            status = ToolExecutionStatus.UNAUTHORIZED
+            error_code = "PROVIDER_AUTHENTICATION_ERROR"
+            retryable = False
+        elif isinstance(last_exception, ProviderRateLimitError):
+            status = ToolExecutionStatus.FAILED
+            error_code = "RATE_LIMIT_EXCEEDED"
+            retryable = True
+        elif isinstance(last_exception, ProviderResponseValidationError):
+            status = ToolExecutionStatus.FAILED
+            error_code = "PROVIDER_RESPONSE_VALIDATION_ERROR"
+            retryable = False
+        elif isinstance(last_exception, ProviderNetworkError):
+            status = ToolExecutionStatus.FAILED
+            error_code = "PROVIDER_NETWORK_ERROR"
+            retryable = True
+        else:
+            status = ToolExecutionStatus.FAILED
+            error_code = "EXECUTION_FAILED"
+            retryable = False
+
+        failed_provider = getattr(last_exception, "provider", None)
 
         err = ToolExecutionError(
             tool_name=tool_name,
-            error_code="TIMEOUT" if isinstance(last_exception, TimeoutError) else "EXECUTION_FAILED",
+            error_code=error_code,
             message=err_msg,
-            retryable=False,
+            retryable=retryable,
             execution_id=exec_id,
         )
 
@@ -207,6 +288,7 @@ class MCPClient:
             retries=retries_used,
             error=str(last_exception),
             mode="DEMO" if is_demo else "LIVE",
+            provider=failed_provider,
         )
 
         return MCPToolResult(
@@ -215,6 +297,7 @@ class MCPClient:
             error=err,
             latency_ms=duration_ms,
             mode="DEMO" if is_demo else "LIVE",
+            provider=failed_provider,
             demo_data=is_demo,
         )
 
@@ -230,6 +313,7 @@ class MCPClient:
         retries: int,
         error: Optional[str] = None,
         mode: str = "DEMO",
+        provider: Optional[str] = None,
     ) -> None:
         """Append to in-memory recent calls audit trail."""
         call_rec = MCPToolCall(
@@ -241,6 +325,7 @@ class MCPClient:
             input_metadata=safe_args,
             retries=retries,
             mode=mode,
+            provider=provider,
             error=error,
         )
         cls._recent_calls.append(call_rec)

@@ -300,20 +300,52 @@ This development plan breaks down the construction of the platform into **18 dis
 
 ---
 
-## Phase 8: Real External APIs Integration
-- **Objective**: Connect real-world travel APIs for live data retrieval, wrapped in robust error handling.
+## Phase 8: Real External APIs & Provider Integration (Completed)
+- **Objective**: Replace mock/demo implementations with real external provider adapters behind the MCP tool boundary, ensuring agents never call external APIs directly while providing robust resiliency, rate limiting, and caching.
+- **Architecture**:
+  ```
+  Agent  ──>  MCP Tool  ──>  Provider Adapter  ──>  External API
+                                                        │
+  Agent  <──  MCP Tool  <──  Normalized Model  <────────┘
+  ```
 - **Implementation Tasks**:
-  1. Implement Amadeus API client (`src/services/amadeus_service.py`) for live flight and hotel pricing.
-  2. Implement OpenWeather API client (`src/services/weather_service.py`) for live 14-day forecasts.
-  3. Implement circuit breaker and fallback logic: if API fails, timeout occurs, or rate limit hit, gracefully fall back to mock data with UI notification.
+  1. Base Provider Infrastructure & Resiliency (`mcp/providers/base.py`):
+     - `BaseProvider` using `httpx.Client` with bounded exponential backoff retries (`max_retries=2`).
+     - Error classification hierarchy: `ProviderError`, `ProviderConfigurationError`, `ProviderAuthenticationError`, `ProviderRateLimitError` (HTTP 429 with `Retry-After`), `ProviderTimeoutError` (5-8s ceilings), `ProviderNetworkError` (5xx), `ProviderResponseValidationError`.
+     - Header sanitization (`_sanitize_headers`) ensuring secrets and tokens are redacted.
+     - `SourceAttribution` tracking provider provenance, source URL, timestamp, and mode.
+     - Context variable (`_execution_mode_ctx`) propagating execution mode from `MCPClient` into provider adapters.
+  2. In-Memory TTL Cache (`mcp/providers/cache.py`):
+     - `ProviderCache` providing thread-safe caching with per-key expiration and hit/miss statistics.
+  3. External Provider Adapters (`mcp/providers/`):
+     - **Currency Provider** (`currency_provider.py`): Frankfurter API (live European Central Bank reference exchange rates, 1-hour caching, 1:1 identity optimization, deterministic mock fallback).
+     - **Weather Provider** (`weather_provider.py`): Open-Meteo API (WMO standard meteorological data, geocoding resolution, live daily forecasts, storm alerts, 10-minute caching).
+     - **Maps / Places Provider** (`maps_provider.py`): Photon (OpenStreetMap geocoding & POI search) and OSRM (route calculation & transit duration estimation, 1-hour caching).
+     - **Search Provider** (`search_provider.py`): Tavily AI search and Wikipedia OpenSearch API with strict untrusted data isolation (`untrusted=True`), prompt injection stripping, and SSRF-blocked `fetch_page`.
+     - **Flight Provider** (`flight_provider.py`): Amadeus GDS Aviation API with OAuth2 client credentials token caching, flight search, ranking, and `ProviderConfigurationError` when keys are unconfigured.
+     - **Hotel Provider** (`hotel_provider.py`): Amadeus Hospitality API with city code mapping, lodging search, and amenity normalization.
+  4. Tool Delegation (`mcp/tools/`):
+     - Rewired all MCP domain tools (`flight_tools.py`, `hotel_tools.py`, `maps_tools.py`, `weather_tools.py`, `search_tools.py`, `currency_tools.py`) to delegate to provider adapters.
+  5. Gateway Telemetry & UI (`mcp/client.py`, `app/pages/agent_trace.py`):
+     - Updated `MCPClient` to capture provider provenance, execution mode, retries, and structured error codes.
+     - Updated Streamlit Agent Trace page with provider routing tree (`Amadeus GDS`, `Open-Meteo WMO`, `Frankfurter (ECB)`, `Photon/OSRM`, `Wikipedia/Tavily`), Live vs Demo badges, latency benchmarks, and failure diagnostics.
+  6. Configuration & Security (`config/settings.py`, `.env.example`):
+     - Added provider credential fields (`amadeus_client_id`, `amadeus_client_secret`, `openweather_api_key`, `tavily_api_key`, `google_places_api_key`).
+     - Kept `.env` gitignored with zero committed credentials.
+  7. Comprehensive Testing (`tests/test_providers.py`):
+     - 23 unit tests covering provider configuration, missing credentials, parsing, Pydantic validation, timeouts, retries, 429 rate limits, 5xx backoff, untrusted sanitization, and architectural boundary verification.
 - **Files / Components**:
-  - `src/services/amadeus_service.py`, `src/services/weather_service.py`
-  - `src/services/api_resilience.py`
-  - `tests/test_external_apis.py`
+  - `config/settings.py`, `.env.example`
+  - `mcp/providers/base.py`, `mcp/providers/cache.py`, `mcp/providers/currency_provider.py`, `mcp/providers/weather_provider.py`, `mcp/providers/maps_provider.py`, `mcp/providers/search_provider.py`, `mcp/providers/flight_provider.py`, `mcp/providers/hotel_provider.py`, `mcp/providers/__init__.py`
+  - `mcp/tools/currency_tools.py`, `mcp/tools/flight_tools.py`, `mcp/tools/hotel_tools.py`, `mcp/tools/maps_tools.py`, `mcp/tools/weather_tools.py`, `mcp/tools/search_tools.py`
+  - `mcp/client.py`, `models/mcp.py`, `graph/__init__.py`
+  - `app/pages/agent_trace.py`
+  - `tests/test_providers.py`
 - **Testing Requirements**:
-  - Mock HTTP 429, 500, and timeout responses; verify seamless fallback without application crash.
+  - 144 unit and integration tests passing (`pytest -v`).
+  - Verified mock and live parsing, failure isolation, retry policies, secret masking, and agent boundary preservation.
 - **Expected Output**:
-  - Live data fetching when credentials provided, with zero-crash resilience.
+  - Legitimate live external API integrations with zero direct calls from agents, safe mock fallback in DEMO mode, and clear UI diagnostics.
 
 ---
 

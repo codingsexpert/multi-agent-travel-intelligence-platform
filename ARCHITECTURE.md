@@ -377,7 +377,93 @@ MCP tool failures do not crash the LangGraph workflow:
 
 ---
 
-## 7. RAG (Retrieval-Augmented Generation) Architecture
+## 7. Real API / Provider Adapter Architecture (Phase 8 Implemented)
+
+### 7.1 Provider Integration Architecture & Information Flow
+
+The platform enforces a strict architectural boundary: **Agents never directly call external APIs**. All external network communications occur through dedicated provider adapters encapsulated behind MCP tools:
+
+```mermaid
+graph TD
+    Agent[Reasoning Agent] -->|1. Invoke Tool| LG[LangGraph Orchestration]
+    LG -->|2. Dispatch| MCPClient[MCP Gateway & Registry]
+    MCPClient -->|3. Delegate| Tool[MCP Tool Handler]
+    Tool -->|4. Request| Adapter[Provider Adapter]
+    Adapter -->|5. HTTP / Auth| ExternalAPI[(External Provider API)]
+    ExternalAPI -->|6. Raw Response| Adapter
+    Adapter -->|7. Parse & Validate| PydanticModel[Normalized Pydantic Model]
+    PydanticModel -->|8. Structured Output| Tool
+    Tool -->|9. MCP Tool Result| MCPClient
+    MCPClient -->|10. Telemetry & State| Agent
+```
+
+### 7.2 Integrated Provider Ecosystem
+
+| Capability Domain | Real Provider Adapter | Protocol / Endpoint | Auth & Credentials | DEMO Mode Fallback |
+|---|---|---|---|---|
+| **Foreign Exchange** | `CurrencyProvider` (Frankfurter) | REST: `api.frankfurter.dev/v1/latest` | Open / Keyless (European Central Bank) | Deterministic `USD_BASE_RATES` table |
+| **Climatology & Forecasts** | `WeatherProvider` (Open-Meteo) | REST: `api.open-meteo.com/v1/forecast` | Open / Keyless (WMO 7-14 day forecast) | Deterministic seasonal weather cycle |
+| **Places & POI Discovery** | `MapsProvider` (Photon / OSM) | REST: `photon.komoot.io/api` | Open / Keyless (OpenStreetMap POIs) | Curated architectural landmarks catalog |
+| **Corridor Routing & Transit** | `MapsProvider` (OSRM) | REST: `router.project-osrm.org/route/v1` | Open / Keyless (OSRM driving/transit) | Speed-factor transit matrix |
+| **Live Knowledge & Search** | `SearchProvider` (Wikipedia & Tavily) | REST: `en.wikipedia.org/w/api.php` | Keyless Wikipedia; `TAVILY_API_KEY` (opt) | Sandboxed travel guidance snippets |
+| **Aviation Corridors** | `FlightProvider` (Amadeus GDS) | REST: `test.api.amadeus.com/v2/shopping` | OAuth2: `AMADEUS_CLIENT_ID` + Secret | Deterministic global GDS catalog |
+| **Hospitality Search** | `HotelProvider` (Amadeus Hospitality) | REST: `test.api.amadeus.com/v1/reference-data` | OAuth2: `AMADEUS_CLIENT_ID` + Secret | Curated hotel aggregator index |
+
+### 7.3 Timeouts, Retries, and Error Classification
+
+Every external provider request is executed via `BaseProvider.execute_http_request()`:
+- **Explicit Timeout Ceilings**: 5.0s to 8.0s hard timeout per HTTP call (preventing hanging agent threads).
+- **Bounded Exponential Backoff**: Maximum 2 retries (`attempt = 0, 1, 2`) with jittered backoff delay (`0.3s * 2^attempt`).
+- **Error Classification**:
+  - *Retryable Errors*: `ProviderTimeoutError`, `ProviderNetworkError` (transport/DNS failure, HTTP 5xx), `ProviderRateLimitError` (HTTP 429).
+  - *Non-Retryable Errors*: `ProviderConfigurationError` (missing credentials in LIVE mode), `ProviderAuthenticationError` (HTTP 401/403), `ProviderResponseValidationError` (malformed schema), client errors (400-499).
+- **Rate Limit Backoff**: Automatically reads `Retry-After` header on HTTP 429 responses, pauses execution up to a safety ceiling (3.0s), and logs throttled provider events without infinite loops.
+
+### 7.4 In-Memory TTL Caching Policy
+
+To prevent redundant API consumption and mitigate third-party rate limits, `ProviderCache` provides thread-safe in-memory caching:
+- **Currency Rates**: TTL = 3,600 seconds (1 hour). Exchange rates change slowly during planning sessions.
+- **Weather Forecasts**: TTL = 600 seconds (10 minutes).
+- **Spatial Places & Routes**: TTL = 3,600 seconds (1 hour).
+- **Web Search Queries**: TTL = 900 seconds (15 minutes).
+- **Flight & Hotel Queries**: TTL = 1,800 seconds (30 minutes).
+- *Strict Rule*: Real-time seat availability locks are never cached; caching only applies to initial discovery queries.
+
+### 7.5 Untrusted Data Isolation & Security
+
+1. **Third-Party Data Sanitization**: All external web data is treated as **UNTRUSTED DATA**:
+   - Stripped of `<script>`, `<style>`, and raw HTML tags.
+   - Neutralized against prompt injection patterns (`ignore previous instructions`, `developer mode`, `system prompt`).
+   - Length-capped at 3,000 characters before delivery to reasoning models.
+2. **SSRF & Address Filtering**: `fetch_page` forbids loopbacks (`127.0.0.1`, `localhost`), link-local metadata services (`169.254.169.254`), and private subnets (`10.0.0.0/8`, `192.168.0.0/16`, `172.16.0.0/12`).
+3. **Zero Secret Leakage**:
+   - Credentials originate exclusively from environment variables.
+   - Outbound HTTP headers automatically redact `Authorization`, `X-Api-Key`, tokens, and passwords (`[REDACTED_SECRET]`).
+   - Audit telemetry logs sanitize all parameter maps with `[MASKED_SECRET]`.
+
+### 7.6 Source Attribution & Telemetry
+
+All provider responses record provenance metadata for end-user auditability:
+```json
+{
+  "provider": "Amadeus GDS",
+  "source_url": "https://test.api.amadeus.com/v2/shopping/flight-offers",
+  "retrieved_at": "2026-09-28T23:30:00Z",
+  "data_mode": "LIVE"
+}
+```
+
+### 7.7 Scope Limitation (Read-Only Intelligence)
+
+Phase 8 is strictly **read-only travel intelligence**. The platform intentionally does NOT implement:
+- Flight booking or ticketing
+- Hotel reservations or payment processing
+- Ticket cancellations or user financial transactions
+- Autonomous credit card authorizations
+
+---
+
+## 8. RAG (Retrieval-Augmented Generation) Architecture
 
 RAG is dedicated to **relatively stable domain knowledge**:
 - Destination guides and seasonal climates

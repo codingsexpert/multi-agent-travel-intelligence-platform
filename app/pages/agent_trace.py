@@ -160,54 +160,87 @@ def render_agent_trace_page() -> None:
     col_tree, col_summary = st.columns([3, 2])
 
     with col_tree:
-        st.markdown("#### MCP Tool Routing Tree")
+        st.markdown("#### Provider Execution Tree & Status")
+
+        # Dynamically build provider status tree from recorded calls
+        tree_lines = []
+        agent_group_order = [
+            ("Flight Agent", "Flight MCP", "Amadeus GDS"),
+            ("Hotel Agent", "Hotel MCP", "Amadeus Hospitality"),
+            ("Activity Agent", "Maps MCP", "OSM / Photon & OSRM"),
+            ("Weather Agent", "Weather MCP", "Open-Meteo WMO"),
+            ("Research Agent", "Search MCP", "Wikipedia / Tavily"),
+            ("Budget Engine", "Currency MCP", "Frankfurter (ECB)"),
+        ]
+
+        # Map calls by agent
+        calls_by_agent: Dict[str, List[Dict[str, Any]]] = {}
+        for c in all_calls:
+            a_key = c.get("agent_name", "").lower()
+            calls_by_agent.setdefault(a_key, []).append(c)
+
+        for agent_label, mcp_label, default_provider in agent_group_order:
+            a_key = agent_label.lower().split()[0]
+            agent_calls = calls_by_agent.get(a_key, [])
+
+            tree_lines.append(f"{agent_label}")
+            tree_lines.append(f" └─ {mcp_label}")
+
+            if not agent_calls:
+                tree_lines.append(f"     └─ Provider: {default_provider}")
+                tree_lines.append(f"        ○ STANDBY")
+            else:
+                last_call = agent_calls[-1]
+                prov_name = last_call.get("provider") or default_provider
+                is_success = last_call.get("status") == "SUCCESS"
+                mode_str = last_call.get("mode", "DEMO")
+                dur_s = last_call.get("duration_ms", 0.0) / 1000.0
+                retries = last_call.get("retries", 0)
+
+                if is_success:
+                    badge = "✓ LIVE" if mode_str == "LIVE" else "✓ DEMO DATA"
+                    tree_lines.append(f"     └─ Provider: {prov_name}")
+                    tree_lines.append(f"        {badge}")
+                    tree_lines.append(f"        {dur_s:.2f}s")
+                else:
+                    tree_lines.append(f"     └─ Provider Error")
+                    tree_lines.append(f"        ✗ {mode_str}")
+                    err_brief = (last_call.get("error") or "execution failed")[:30]
+                    tree_lines.append(f"        {err_brief}")
+                    if retries > 0:
+                        tree_lines.append(f"        retry_count: {retries}")
+            tree_lines.append("")
+
+        st.code("\n".join(tree_lines), language="text")
+
+    with col_summary:
+        st.markdown("#### Provider Integration Architecture")
         st.code(
             """
-Flight Agent
-  └── Flight MCP
-       ├── search_flights       ✓
-       ├── compare_flights      ✓
-       └── get_flight_details   ✓
-
-Hotel Agent
-  └── Hotel MCP
-       ├── search_hotels        ✓
-       └── get_hotel_details    ✓
-
-Activity Agent
-  └── Maps MCP
-       ├── search_places        ✓
-       ├── calculate_route      ✓
-       └── estimate_travel_time ✓
-
-Weather Agent
-  └── Weather MCP
-       ├── get_current_weather  ✓
-       ├── get_forecast         ✓
-       └── get_weather_alerts   ✓
-
-Research Agent
-  └── Search MCP
-       ├── web_search           ✓ (Untrusted Data Sandboxed)
-       ├── fetch_page           ✓ (URL Allowlist Enforced)
-       └── search_news          ✓ (Untrusted Data Sandboxed)
-
-Budget Engine
-  └── Currency MCP
-       └── get_exchange_rate    ✓
+Agent
+ ↓
+LangGraph
+ ↓
+MCP Tool Boundary
+ ↓
+Provider Adapter
+ ↓
+External API
+ ↓
+Normalized Pydantic Model
+ ↓
+MCP Gateway
+ ↓
+Agent
             """,
             language="text",
         )
-
-    with col_summary:
-        st.markdown("#### Security & Boundaries")
         st.markdown(
             """
-            - 🛡️ **Least Privilege**: Each agent can only invoke tools in its designated allowlist.
-            - 🔒 **URL Sandboxing**: Localhost, link-local, and private RFC-1918 IPs blocked (SSRF prevention).
-            - 🧼 **Untrusted Web Content**: All retrieved search & web content marked `untrusted` with injection tokens sanitized.
-            - ⏱️ **Timeouts & Retries**: Exponential backoff with strict execution ceilings.
-            - 🚫 **No Arbitrary Execution**: Booking, payments, shell, and code execution strictly prohibited.
+            - 🌐 **Real APIs**: Frankfurter ECB (FX), Open-Meteo (Weather), Photon/OSRM (Maps), Wikipedia/Tavily (Search), Amadeus GDS (Flights/Hotels).
+            - 🛡️ **Untrusted Data Isolation**: All third-party HTML/APIs sanitized before reaching reasoning agents.
+            - ⚡ **Resilient Adapters**: Bounded retries (max 2), explicit 5-8s timeouts, rate-limit backoff (429), and in-memory TTL caching.
+            - 🔒 **Zero Secret Exposure**: Headers, Authorization tokens, and keys scrubbed from audit traces.
             """
         )
 
@@ -220,30 +253,36 @@ Budget Engine
         for call in all_calls:
             c_tool = call.get("tool_name", "unknown")
             c_agent = f"{call.get('agent_name', 'system').capitalize()} Agent"
+            c_provider = call.get("provider") or "Internal Provider"
             c_status = call.get("status", "SUCCESS")
             c_duration = call.get("duration_ms", 0.0)
             c_retries = call.get("retries", 0)
             c_mode = call.get("mode", "DEMO")
             c_error = call.get("error") or "None"
 
-            # Status Icon
+            # Mode & Status Badges
             if c_status == "SUCCESS":
                 status_icon = "✅ SUCCESS"
+                data_badge = "🟢 LIVE DATA" if c_mode == "LIVE" else "🟡 DEMO DATA"
             elif c_status == "UNAUTHORIZED":
                 status_icon = "🚫 UNAUTHORIZED"
+                data_badge = "🔴 UNAVAILABLE"
             elif c_status == "TIMED_OUT":
                 status_icon = "⏱️ TIMED OUT"
+                data_badge = "🔴 PROVIDER ERROR"
             else:
                 status_icon = f"❌ {c_status}"
+                data_badge = "🔴 PROVIDER ERROR"
 
             mcp_table_rows.append({
                 "Tool": c_tool,
                 "Agent": c_agent,
+                "Provider": c_provider,
                 "Status": status_icon,
+                "Data Mode": data_badge,
                 "Duration": f"{c_duration:.1f}ms",
                 "Retries": c_retries,
-                "Mode": c_mode,
-                "Error Details": c_error,
+                "Error Details": c_error[:60] if c_error != "None" else "None",
             })
 
         st.table(mcp_table_rows)

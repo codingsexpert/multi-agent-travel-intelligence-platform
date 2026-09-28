@@ -172,12 +172,22 @@ travel-intelligence-platform/
 │   └── validator_engine.py       # Deterministic feasibility & time-conflict validation
 ├── graph/                        # LangGraph orchestration state machine (Phases 4, 5 & 6)
 ├── guardrails/                   # Input, tool & output safety guardrails (Phase 11)
-├── mcp/                          # Model Context Protocol servers & clients (Phase 7 - Completed)
+├── mcp/                          # Model Context Protocol servers, adapters & clients (Phases 7 & 8)
 │   ├── __init__.py
 │   ├── client.py                 # MCPClient gateway with retries, timeouts, and auditing
 │   ├── registry.py               # MCPToolRegistry with 14 typed descriptors
 │   ├── security.py               # MCPSecurityManager (Least privilege, SSRF, sanitization)
-│   └── tools/                    # Domain-specific MCP tools
+│   ├── providers/                # External provider adapters & resiliency (Phase 8 - Completed)
+│   │   ├── __init__.py
+│   │   ├── base.py               # BaseProvider with backoff, timeouts, 429 Retry-After, and sanitization
+│   │   ├── cache.py              # Thread-safe in-memory TTL ProviderCache
+│   │   ├── currency_provider.py  # Frankfurter ECB live exchange rates & caching
+│   │   ├── weather_provider.py   # Open-Meteo WMO daily forecasts & alert checks
+│   │   ├── maps_provider.py      # Photon OSM geocoding/POI & OSRM transit routing
+│   │   ├── search_provider.py    # Tavily & Wikipedia OpenSearch with untrusted content isolation
+│   │   ├── flight_provider.py    # Amadeus GDS Flight Offers Search v2 & OAuth2
+│   │   └── hotel_provider.py     # Amadeus Hospitality hotel discovery & details
+│   └── tools/                    # Domain-specific MCP tools delegating to provider adapters
 │       ├── flight_tools.py       # search_flights, compare_flights, get_flight_details
 │       ├── hotel_tools.py        # search_hotels, get_hotel_details
 │       ├── maps_tools.py         # search_places, calculate_route, estimate_travel_time
@@ -186,7 +196,7 @@ travel-intelligence-platform/
 │       └── currency_tools.py     # get_exchange_rate
 ├── rag/                          # pgvector RAG domain knowledge base (Phase 9)
 ├── evaluation/                   # Automated evaluation & benchmark datasets (Phase 16)
-├── tests/                        # Comprehensive test suite (pytest - 121 tests)
+├── tests/                        # Comprehensive test suite (pytest - 144 tests)
 │   ├── test_auth.py              # Supabase Auth and session tests
 │   ├── test_budget_engine.py     # Deterministic budget calculation tests
 │   ├── test_config.py            # Environment & settings loading tests
@@ -196,6 +206,7 @@ travel-intelligence-platform/
 │   ├── test_llm_service.py       # LLM provider & fallback tests
 │   ├── test_logger_exceptions.py # Secret scrubbing & exception hierarchy tests
 │   ├── test_mcp.py               # Phase 7 MCP tools, validation, security, and client tests
+│   ├── test_providers.py         # Phase 8 Real provider adapters, resiliency, 429, timeouts, caching
 │   ├── test_models.py            # Pydantic travel schema validation tests
 │   ├── test_multi_agent_workflow.py # Multi-agent workflow integration tests
 │   ├── test_planner_models.py    # Structured planner model tests
@@ -292,7 +303,7 @@ The platform is developed in **18 distinct phases**:
 - [x] **Phase 5: Specialized Mock Domain Agents** *(Completed)*
 - [x] **Phase 6: Budget Engine & Validator/Safety Agent (Pure Python)** *(Completed)*
 - [x] **Phase 7: Model Context Protocol (MCP) Integration** *(Completed)*
-- [ ] **Phase 8: Real External APIs Integration**
+- [x] **Phase 8: Real External APIs & Provider Integration** *(Completed)*
 - [ ] **Phase 9: RAG Knowledge Base & Supabase pgvector**
 - [ ] **Phase 10: Live Web Search Integration**
 - [ ] **Phase 11: Guardrails & Security Implementation**

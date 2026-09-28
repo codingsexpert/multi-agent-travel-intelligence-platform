@@ -42,6 +42,7 @@ class MCPToolCall(BaseModel):
     input_metadata: Dict[str, Any] = Field(default_factory=dict, description="Sanitized arguments (zero secrets).")
     retries: int = 0
     mode: str = "DEMO"
+    provider: Optional[str] = None
     error: Optional[str] = None
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -55,6 +56,7 @@ class MCPToolResult(BaseModel):
     error: Optional[ToolExecutionError] = None
     latency_ms: float = 0.0
     mode: str = "DEMO"
+    provider: Optional[str] = None
     demo_data: bool = True
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
@@ -82,6 +84,8 @@ class SearchFlightsOutput(BaseModel):
     flights: List[FlightOption] = Field(default_factory=list)
     total_found: int
     search_timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    provider: str = "Mock Flight Catalog"
+    data_mode: str = "DEMO"
     demo_data: bool = True
 
 
@@ -97,6 +101,8 @@ class CompareFlightsOutput(BaseModel):
 
     comparisons: List[Dict[str, Any]] = Field(default_factory=list)
     recommended_id: Optional[str] = None
+    provider: str = "Flight Comparator"
+    data_mode: str = "DEMO"
     demo_data: bool = True
 
 
@@ -112,6 +118,8 @@ class GetFlightDetailsOutput(BaseModel):
     flight: FlightOption
     baggage_allowance: str = "1 carry-on (8kg) + 1 checked bag (23kg)"
     cancellation_policy: str = "Standard refundable with fee up to 24h before departure"
+    provider: str = "Flight Detail Service"
+    data_mode: str = "DEMO"
     demo_data: bool = True
 
 
@@ -137,6 +145,8 @@ class SearchHotelsOutput(BaseModel):
 
     hotels: List[HotelOption] = Field(default_factory=list)
     total_found: int
+    provider: str = "Mock Hospitality Catalog"
+    data_mode: str = "DEMO"
     demo_data: bool = True
 
 
@@ -153,6 +163,8 @@ class GetHotelDetailsOutput(BaseModel):
     policies: List[str] = Field(default_factory=lambda: ["Smoke-free property", "24/7 Front Desk concierge"])
     check_in_time: str = "15:00"
     check_out_time: str = "11:00"
+    provider: str = "Hotel Detail Service"
+    data_mode: str = "DEMO"
     demo_data: bool = True
 
 
@@ -168,6 +180,8 @@ class PlaceItem(BaseModel):
     category: str
     rating: float = Field(ge=0.0, le=5.0)
     estimated_time_spent_hours: float = 2.0
+    provider: str = "Mock Places Catalog"
+    data_mode: str = "DEMO"
     demo_data: bool = True
 
 
@@ -184,6 +198,8 @@ class SearchPlacesOutput(BaseModel):
     """Discovered points of interest."""
 
     places: List[PlaceItem] = Field(default_factory=list)
+    provider: str = "Mock Places Catalog"
+    data_mode: str = "DEMO"
     demo_data: bool = True
 
 
@@ -204,6 +220,8 @@ class CalculateRouteOutput(BaseModel):
     distance_km: float
     duration_minutes: int
     steps: List[str] = Field(default_factory=list)
+    provider: str = "Mock Routing Service"
+    data_mode: str = "DEMO"
     demo_data: bool = True
 
 
@@ -223,6 +241,8 @@ class EstimateTravelTimeOutput(BaseModel):
     mode: str
     duration_minutes: int
     buffer_minutes: int = 15
+    provider: str = "Travel Time Estimator"
+    data_mode: str = "DEMO"
     demo_data: bool = True
 
 
@@ -244,6 +264,8 @@ class GetCurrentWeatherOutput(BaseModel):
     condition: str
     humidity_percent: int = 60
     wind_speed_kmh: float = 12.0
+    provider: str = "Mock Climatological Service"
+    data_mode: str = "DEMO"
     demo_data: bool = True
 
 
@@ -260,6 +282,8 @@ class GetForecastOutput(BaseModel):
 
     location: str
     forecasts: List[WeatherObservation] = Field(default_factory=list)
+    provider: str = "Mock Climatological Service"
+    data_mode: str = "DEMO"
     demo_data: bool = True
 
 
@@ -275,6 +299,8 @@ class GetWeatherAlertsOutput(BaseModel):
     location: str
     alerts: List[str] = Field(default_factory=list)
     severity: str = "NONE"
+    provider: str = "Mock Climatological Service"
+    data_mode: str = "DEMO"
     demo_data: bool = True
 
 
@@ -288,7 +314,11 @@ class SearchResultItem(BaseModel):
     title: str
     url: str
     snippet: str
+    source_domain: Optional[str] = None
+    retrieved_at: Optional[str] = None
     untrusted: bool = Field(default=True, description="Indicates third-party content requiring sanitization.")
+    provider: str = "Mock Search Service"
+    data_mode: str = "DEMO"
     demo_data: bool = True
 
 
@@ -304,6 +334,8 @@ class WebSearchOutput(BaseModel):
 
     query: str
     results: List[SearchResultItem] = Field(default_factory=list)
+    provider: str = "Mock Search Service"
+    data_mode: str = "DEMO"
     untrusted: bool = True
     demo_data: bool = True
 
@@ -319,7 +351,7 @@ class FetchPageInput(BaseModel):
         v_clean = v.strip().lower()
         if not (v_clean.startswith("http://") or v_clean.startswith("https://")):
             raise ValueError("Only HTTP and HTTPS URLs are permitted.")
-        for blocked in ("localhost", "127.0.0.1", "0.0.0.0", "169.254.", "10.", "192.168."):
+        for blocked in ("localhost", "127.0.0.1", "0.0.0.0", "169.254.", "10.", "192.168.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.31."):
             if blocked in v_clean:
                 raise ValueError("Requests to private/local network addresses are strictly prohibited.")
         return v.strip()
@@ -331,6 +363,8 @@ class FetchPageOutput(BaseModel):
     url: str
     title: str
     content: str = Field(description="Sanitized web page text body.")
+    provider: str = "Mock Web Fetcher"
+    data_mode: str = "DEMO"
     untrusted: bool = True
     demo_data: bool = True
 
@@ -347,6 +381,8 @@ class SearchNewsOutput(BaseModel):
 
     query: str
     articles: List[Dict[str, Any]] = Field(default_factory=list)
+    provider: str = "Mock News Service"
+    data_mode: str = "DEMO"
     untrusted: bool = True
     demo_data: bool = True
 
@@ -374,4 +410,6 @@ class GetExchangeRateOutput(BaseModel):
     target_currency: str
     exchange_rate: float = Field(ge=0.0)
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    provider: str = "Mock Currency Catalog"
+    data_mode: str = "DEMO"
     demo_data: bool = True

@@ -280,3 +280,40 @@ In Phase 7, agents require access to external capabilities (flight discovery, lo
    - MCP failures return structured `ToolExecutionError` objects (`tool_name`, `error_code`, `message`, `retryable`, `execution_id`) without crashing LangGraph orchestration.
 5. **Observability & UI Telemetry**:
    - Tool calls emit `MCPToolCall` audit records capturing latency, retry counts, execution mode (`DEMO` vs `LIVE`), and status chips rendered live in the Streamlit Travel Command Center.
+
+---
+
+## ADR-15: Real Provider Adapters, In-Memory Caching, and Resiliency
+
+### Context
+In Phase 8, external capabilities accessed via MCP tools must transition from synthetic mock responses to legitimate external APIs (Frankfurter ECB, Open-Meteo, Photon/OSRM, Wikipedia/Tavily, and Amadeus GDS) while keeping the strict architectural rule: **Agents must never directly call external APIs**. The integration must maintain deterministic DEMO mode, protect secrets, handle rate limits (HTTP 429), prevent cascading failures, and cache idempotent responses.
+
+### Decision
+1. **MCP as the Capability Boundary**:
+   - The integration follows a clean layered design:
+     ```
+     Agent  ──>  MCP Tool  ──>  Provider Adapter  ──>  External API
+                                                           │
+     Agent  <──  MCP Tool  <──  Normalized Model  <────────┘
+     ```
+   - Agents remain completely decoupled from HTTP clients, provider request formats, and authentication flows.
+2. **Real Provider Selection**:
+   - *Currency*: Frankfurter API (live European Central Bank reference exchange rates, open and keyless).
+   - *Weather*: Open-Meteo API (WMO standard meteorological data, live daily forecasts, open and keyless).
+   - *Maps & Places*: Photon (OpenStreetMap geocoding & POI discovery) and OSRM (driving/transit route distance & duration calculation, open and keyless).
+   - *Search*: Wikipedia OpenSearch API (live open knowledge) and Tavily AI search (when configured), with strict untrusted data isolation.
+   - *Flights & Hotels*: Amadeus Travel Innovation API (GDS flight offers search v2, hotel search by city, OAuth2 client credentials token caching). When credentials are missing in LIVE mode, raises clear `ProviderConfigurationError` without fabricating fake live data.
+3. **Resilient HTTP Client & Backoff**:
+   - Base adapter `BaseProvider` enforces bounded exponential backoff (`max_retries=2`), explicit 5-8s timeout ceilings, and structured error mapping (`ProviderError`, `ProviderConfigurationError`, `ProviderAuthenticationError`, `ProviderRateLimitError`, `ProviderTimeoutError`, `ProviderNetworkError`, `ProviderResponseValidationError`).
+   - Rate limiting: HTTP 429 parses `Retry-After` header and sleeps before bounded retry, failing cleanly if exhausted.
+4. **Thread-Safe In-Memory TTL Caching**:
+   - `ProviderCache` provides thread-safe TTL caching for idempotent data (FX rates 1h, weather 10m, routes/places 1h, flight/hotel searches 30m) to reduce redundant API calls and latency. Volatile real-time seat locks are never cached.
+5. **Security & Zero Secret Exposure**:
+   - API keys and tokens are loaded strictly from environment variables.
+   - HTTP headers and telemetry scrub all sensitive credentials (`Authorization`, `api_key`, `token`, `secret`).
+   - All retrieved web content is tagged `untrusted: True` and sanitized before reaching reasoning agents.
+6. **DEMO vs. LIVE Diagnostics**:
+   - `DEMO_MODE=true` returns deterministic mock data with `demo_data=True` and `[DEMO_DATA]` markers.
+   - `DEMO_MODE=false` executes live providers; if credentials are missing, returns structured `PROVIDER_CONFIGURATION_ERROR`.
+   - Streamlit Agent Trace page clearly displays provider attribution, live vs demo badges (`✓ LIVE` vs `✓ DEMO DATA`), duration, and failure diagnostics.
+

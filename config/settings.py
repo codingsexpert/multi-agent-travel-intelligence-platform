@@ -51,10 +51,43 @@ class Settings(BaseSettings):
         validation_alias="langsmith_project",
     )
 
+    # External Provider Configuration (Phase 8 - Optional when DEMO_MODE=true)
+    amadeus_client_id: Optional[SecretStr] = Field(default=None, description="Amadeus API Client ID for Flights & Hotels")
+    amadeus_client_secret: Optional[SecretStr] = Field(default=None, description="Amadeus API Client Secret")
+    openweather_api_key: Optional[SecretStr] = Field(default=None, description="OpenWeatherMap API Key (optional; Open-Meteo is default)")
+    tavily_api_key: Optional[SecretStr] = Field(default=None, description="Tavily Web Search API Key")
+    brave_search_api_key: Optional[SecretStr] = Field(default=None, description="Brave Search API Key")
+    google_places_api_key: Optional[SecretStr] = Field(default=None, description="Google Places API Key (optional; OSM/Photon is default)")
+
     @property
     def is_production(self) -> bool:
         """Check if running in production."""
         return self.app_env.lower() == "production"
+
+    @property
+    def has_amadeus_config(self) -> bool:
+        """Check if Amadeus credentials are provided."""
+        return bool(
+            self.amadeus_client_id
+            and self.amadeus_client_id.get_secret_value()
+            and self.amadeus_client_secret
+            and self.amadeus_client_secret.get_secret_value()
+        )
+
+    @property
+    def has_tavily_config(self) -> bool:
+        """Check if Tavily search API key is provided."""
+        return bool(self.tavily_api_key and self.tavily_api_key.get_secret_value())
+
+    @property
+    def has_openweather_config(self) -> bool:
+        """Check if OpenWeatherMap API key is provided."""
+        return bool(self.openweather_api_key and self.openweather_api_key.get_secret_value())
+
+    @property
+    def has_google_places_config(self) -> bool:
+        """Check if Google Places API key is provided."""
+        return bool(self.google_places_api_key and self.google_places_api_key.get_secret_value())
 
     @property
     def has_supabase_config(self) -> bool:
@@ -80,3 +113,7 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Retrieve cached application settings instance."""
     return Settings()
+
+
+# Singleton settings instance for convenience
+settings: Settings = get_settings()
