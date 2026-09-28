@@ -317,3 +317,42 @@ In Phase 8, external capabilities accessed via MCP tools must transition from sy
    - `DEMO_MODE=false` executes live providers; if credentials are missing, returns structured `PROVIDER_CONFIGURATION_ERROR`.
    - Streamlit Agent Trace page clearly displays provider attribution, live vs demo badges (`✓ LIVE` vs `✓ DEMO DATA`), duration, and failure diagnostics.
 
+---
+
+## ADR-16: RAG + Supabase pgvector Architecture, Metadata Filtering, and Prompt Injection Defense
+
+### Context
+In Phase 9, reasoning agents (Activity Agent, Research Agent, and Planner) require reliable, curated travel knowledge (local customs, shrine etiquette, transit rules, attraction heritage, neighborhood overviews). Treating volatile operational APIs or unstructured web search as the sole knowledge source leads to hallucinated customs, broken recommendations, or excessive API cost. Conversely, dumping entire travel guidebooks into prompt contexts triggers token bloat, high latency, and vulnerability to indirect prompt injection.
+
+### Decision
+1. **Tri-Partite Information Source Taxonomy**:
+   - **RAG Knowledge Base**: Stable, vetted, curated travel domain knowledge (customs, etiquette, attractions, transit rules).
+   - **MCP / API Gateway**: Volatile, structured operational data (live flights, hotel inventory, current forecasts, FX rates).
+   - **Web Search (Phase 10)**: Dynamic, breaking, ephemeral information (airport strikes, festival dates, emergency alerts).
+2. **Supabase pgvector Database Architecture**:
+   - Migration `20260928000003_pgvector_rag.sql` enables the `vector` extension and creates a dedicated `public.travel_documents` table.
+   - Vector column: `embedding vector(1536)` matching OpenAI `text-embedding-3-small`.
+   - Indexing: HNSW index (`idx_travel_documents_embedding_hnsw`) with cosine similarity (`vector_cosine_ops`) for sub-10ms nearest neighbor search.
+   - Stored procedure: `match_travel_documents` executes combined vector cosine similarity and relational predicate filtering under `SECURITY INVOKER`.
+3. **Configurable Embedding Strategy & Offline DEMO_MODE**:
+   - Configurable via `config/settings.py` (`embedding_model="text-embedding-3-small"`, `embedding_dimension=1536`).
+   - If `OPENAI_API_KEY` is missing in live mode, raises explicit `EmbeddingConfigurationError`.
+   - In `DEMO_MODE=true`: `MockEmbeddingService` generates deterministic, unit-normalized 1536-dimensional float vectors from text SHA-256 hashes and token buckets, enabling realistic offline cosine similarity evaluation without external APIs or cost.
+4. **Deterministic Ingestion & Deduplication**:
+   - Supports Markdown (.md), Plain Text (.txt), and JSON (.json).
+   - Text cleaning normalizes spacing, strips unprintable control characters, and collapses redundant blank lines.
+   - Deterministic chunking preserves paragraph and sentence boundaries (`rag_chunk_size=500`, `rag_chunk_overlap=80`), pruning micro-fragments (< 25 chars).
+   - SHA-256 content hashing deduplicates ingestion, reusing cached chunks and preventing redundant embedding generation costs.
+5. **Hybrid Vector Similarity + Metadata Filtering**:
+   - Retrieval queries accept `query`, `destination`, `country`, `category` (e.g. customs, attractions, food, transport), and `source_trust`.
+   - Relational metadata filters run alongside vector distance to maximize precision and eliminate cross-destination pollution (e.g. Tokyo query never retrieves Paris customs).
+6. **Row Level Security (RLS) & Private Knowledge Isolation**:
+   - Public curated baseline documents (`is_public = true`) are readable by all authenticated and anonymous sessions.
+   - User-uploaded private documents (`is_public = false`) are guarded by `auth.uid() = user_id`. Cross-user data leakage is strictly blocked by database RLS.
+7. **Prompt Injection Defense & Untrusted Data Sandboxing**:
+   - Retrieved chunks are treated as **UNTRUSTED DATA** (`untrusted: True`).
+   - Regex-based sanitization defangs adversarial directives (`Ignore previous instructions`, `SYSTEM:`, `<script>`).
+   - Injected into agent prompts inside isolated `<curated_travel_knowledge>` blocks with explicit directives instructing the LLM that content represents factual reference data, not instructions.
+8. **No Fabricated Citations**:
+   - Every chunk retains source attribution, trust classification (`OFFICIAL`, `CURATED`, `REFERENCE`, `UNKNOWN`), and real canonical URLs. Documents without URLs are explicitly labeled `[Curated Knowledge]`.
+

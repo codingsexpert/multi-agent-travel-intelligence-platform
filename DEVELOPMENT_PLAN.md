@@ -349,22 +349,61 @@ This development plan breaks down the construction of the platform into **18 dis
 
 ---
 
-## Phase 9: RAG Knowledge Base & Supabase pgvector
-- **Objective**: Implement semantic retrieval over curated destination guides, visa rules, and local customs using `pgvector`.
+## Phase 9: RAG Knowledge Base & Supabase pgvector (Completed)
+- **Objective**: Implement a production-grade Retrieval-Augmented Generation (RAG) pipeline using Supabase PostgreSQL with `pgvector`, HNSW indexing, deterministic document chunking, metadata filtering, prompt injection defense, and agent integration.
 - **Implementation Tasks**:
-  1. Implement vector migration in `supabase/migrations/003_pgvector_setup.sql` with HNSW cosine index.
-  2. Build document ingestion script `scripts/ingest_knowledge.py` to chunk and embed curated travel guides.
-  3. Implement RAG retrieval service `src/services/rag_service.py` with metadata filtering (country, category).
-  4. Connect Research Agent to RAG service.
+  1. Created migration `supabase/migrations/20260928000003_pgvector_rag.sql`:
+     - Enabled `vector` extension.
+     - Created `public.travel_documents` table with 1536-dim vector column, HNSW cosine index, and relational indexes.
+     - Established Row Level Security (RLS) policies for public curated knowledge and user-private isolation.
+     - Implemented `match_travel_documents` RPC function for combined semantic similarity and metadata filtering.
+  2. Implemented RAG and pgvector domain models in `models/rag.py`:
+     - `SourceTrustLevel` (`OFFICIAL`, `CURATED`, `REFERENCE`, `UNKNOWN`).
+     - `DocumentMetadata`, `DocumentChunk`, `RAGRetrievalQuery`, `RetrievedChunk`, `RAGRetrievalResult`.
+     - Prompt injection defenses: `sanitize_retrieved_content` and `format_retrieved_context_defensively`.
+  3. Created vector embedding abstraction in `rag/embeddings.py`:
+     - `BaseEmbeddingService`, `OpenAIEmbeddingService` (model: `text-embedding-3-small`, dim: 1536).
+     - `MockEmbeddingService`: Deterministic unit-normalized 1536-dim float vectors for offline `DEMO_MODE=true`.
+     - `EmbeddingConfigurationError` raised when live credentials are missing in production mode.
+  4. Implemented document ingestion pipeline in `rag/ingestion.py`:
+     - Formats supported: Markdown (.md), Plain Text (.txt), JSON (.json).
+     - Text cleaning, control character stripping, and whitespace normalization.
+     - Deterministic chunking preserving paragraph/sentence boundaries (`rag_chunk_size=500`, `rag_chunk_overlap=80`).
+     - SHA-256 content hash deduplication avoiding redundant chunk creation and embedding costs.
+  5. Created curated baseline seed knowledge base under `rag/seed_data/`:
+     - Tokyo cultural customs guide and landmark experiences guide.
+     - Paris cultural etiquette, museum guidelines, and dining norms.
+     - London transportation and escalator rules guide.
+     - New York City neighborhoods, tipping, and subway customs guide.
+     - Delhi heritage monuments and temple manners guide.
+     - Rome Vatican dress code and historic fountain rules guide.
+  6. Implemented reusable retrieval service in `rag/retriever.py`:
+     - `TravelKnowledgeRetriever` supporting hybrid semantic similarity + metadata filters (`destination`, `country`, `category`, `source_trust`, `is_public`/`user_id`).
+     - Live Supabase pgvector RPC search with fallback to in-memory `MockKnowledgeStore` in DEMO_MODE.
+     - Defensively tags all retrieved chunks as `untrusted: True`.
+  7. Integrated RAG into specialized agents:
+     - `ActivityAgent`: Queries curated attractions and cultural heritage, enriching activity descriptions and attaching verified citations.
+     - `ResearchAgent`: Queries local customs, etiquette, and travel tips, attaching RAG citations to `sources`.
+     - Added `rag_retrievals` telemetry to `TravelState` in `graph/state.py`.
+  8. Updated Streamlit Travel Command Center:
+     - `app/pages/sources.py`: Interactive RAG Sandbox with vector similarity search, destination/category filters, and knowledge base explorer.
+     - `app/pages/agent_trace.py`: Live RAG Knowledge Retrieval audit table and execution metrics.
+  9. Built comprehensive test suite in `tests/test_rag.py` (21 unit and integration tests covering all 22 required points).
 - **Files / Components**:
-  - `supabase/migrations/003_pgvector_setup.sql`, `scripts/ingest_knowledge.py`
-  - `src/services/rag_service.py`, `src/agents/research_agent.py`
-  - `data/knowledge_base/` (curated markdown guides)
+  - `supabase/migrations/20260928000003_pgvector_rag.sql`
+  - `config/settings.py`, `utils/exceptions.py`
+  - `models/rag.py`, `models/__init__.py`
+  - `rag/embeddings.py`, `rag/ingestion.py`, `rag/retriever.py`, `rag/__init__.py`
+  - `rag/seed_data/tokyo_customs.md`, `rag/seed_data/tokyo_attractions.md`, `rag/seed_data/paris_culture.md`
+  - `rag/seed_data/london_transport_culture.md`, `rag/seed_data/new_york_guide.md`, `rag/seed_data/delhi_heritage.md`, `rag/seed_data/rome_heritage.md`
+  - `agents/activity_agent.py`, `agents/research_agent.py`, `graph/state.py`
+  - `app/pages/sources.py`, `app/pages/agent_trace.py`
   - `tests/test_rag.py`
 - **Testing Requirements**:
-  - Test vector similarity queries against mock destination guides; verify precision and relevance scoring.
+  - 165 unit and integration tests passing (`pytest -v`).
+  - Verified pgvector schema, embedding dimensions, document ingestion, chunking, deduplication, metadata filtering, prompt injection defense, private document isolation, and DEMO_MODE.
 - **Expected Output**:
-  - Grounded destination insights retrieved and cited in agent recommendations.
+  - Stable, curated travel knowledge grounded in pgvector and delivered safely to reasoning agents with authentic source attribution.
 
 ---
 

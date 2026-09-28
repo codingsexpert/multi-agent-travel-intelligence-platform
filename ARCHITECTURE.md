@@ -463,20 +463,96 @@ Phase 8 is strictly **read-only travel intelligence**. The platform intentionall
 
 ---
 
-## 8. RAG (Retrieval-Augmented Generation) Architecture
+## 8. RAG (Retrieval-Augmented Generation) & pgvector Architecture
 
-RAG is dedicated to **relatively stable domain knowledge**:
-- Destination guides and seasonal climates
-- Visa requirements and entry regulations
-- Neighborhood safety ratings and public transit tips
-- Curated dining and historical activity recommendations
+The platform incorporates an enterprise-grade Retrieval-Augmented Generation (RAG) architecture using **Supabase PostgreSQL with the pgvector extension**, HNSW indexing, and hybrid metadata filtering.
 
-### Pipeline Design:
-1. **Document Ingestion**: Markdown/PDF guides chunked with semantic boundaries (chunk size 600 tokens, 100 token overlap).
-2. **Embeddings**: Generated using OpenAI `text-embedding-3-small` (1536 dimensions).
-3. **Storage & Vector Index**: Supabase PostgreSQL with the `pgvector` extension using an `HNSW` (Hierarchical Navigable Small World) index for fast approximate nearest neighbor search.
-4. **Metadata Filtering**: Queries are filtered by `country_code`, `destination_city`, and `category` (e.g., `visa`, `cuisine`, `transit`) prior to vector distance calculation.
-5. **Contextual Grounding**: Retrieved context is injected into the Research Agent's system prompt with strict citation constraints.
+### 8.1 Conceptual Retrieval Flow
+
+```text
+                USER QUERY
+                     ↓
+                  AGENT
+                     ↓
+              RAG RETRIEVER
+                     ↓
+             Supabase pgvector
+                     ↓
+          Semantic + Metadata Filter
+                     ↓
+             Relevant Chunks
+                     ↓
+                   AGENT
+```
+
+### 8.2 Architectural Roles: RAG vs MCP/API vs Web Search
+
+The system strictly delineates information sources by stability, structure, and operational volatility:
+
+| Layer | Primary Role | Examples | Authority / Lifespan | Technology |
+| :--- | :--- | :--- | :--- | :--- |
+| **RAG Knowledge Base** | **Stable / Curated Knowledge** | Local customs, temple bowing rules, tipping taboos, attraction history, subway norms | Semi-permanent; vetted editorial knowledge | Supabase pgvector + HNSW |
+| **MCP / API Gateway** | **Structured Live Data** | Flight schedules, seat availability, hotel nightly rates, real-time weather forecasts, FX rates | Volatile operational; real-time transactional | Amadeus GDS, Open-Meteo, Frankfurter |
+| **Web Search** | **Fresh / Current Information** | Transport strikes, sudden airport terminal closures, local festival dates, emergency alerts | Highly dynamic; minutes to days | Tavily / Brave Search API |
+
+### 8.3 pgvector Storage & Migration Specification
+
+All curated and user-private knowledge chunks are persisted in the dedicated `public.travel_documents` table (`20260928000003_pgvector_rag.sql`):
+
+- **Fields**:
+  - `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`
+  - `document_id TEXT NOT NULL`: Unique parent document identifier.
+  - `chunk_id TEXT NOT NULL UNIQUE`: Deterministic chunk identifier (`{doc_id}_c{idx}_{hash}`).
+  - `title TEXT NOT NULL`: Document or section heading.
+  - `content TEXT NOT NULL`: Cleaned textual chunk body.
+  - `embedding vector(1536)`: 1536-dimensional vector matching OpenAI `text-embedding-3-small`.
+  - `source TEXT NOT NULL`: Publishing organization or archive name.
+  - `source_url TEXT`: Canonical web address if available (never fabricated).
+  - `source_trust TEXT NOT NULL DEFAULT 'CURATED'`: Classification (`OFFICIAL`, `CURATED`, `REFERENCE`, `UNKNOWN`).
+  - `destination TEXT`: Target city/destination filter.
+  - `country TEXT`: Target country filter.
+  - `category TEXT NOT NULL`: Topic classification (`customs`, `attractions`, `transport`, `food`, `tips`, `general`).
+  - `metadata JSONB NOT NULL DEFAULT '{}'`: Extensible metadata payload.
+  - `is_public BOOLEAN NOT NULL DEFAULT true`: Visibility scope.
+  - `user_id UUID REFERENCES auth.users(id)`: Owning user UUID for private documents.
+  - `content_hash TEXT NOT NULL`: SHA-256 digest of cleaned text for deduplication.
+  - `created_at`, `updated_at`: Audit timestamps.
+- **Indexes**:
+  - HNSW Index: `CREATE INDEX idx_travel_documents_embedding_hnsw ON public.travel_documents USING hnsw (embedding vector_cosine_ops);`
+  - B-tree Relational Indexes: `(destination)`, `(country)`, `(category)`, `(user_id)`, `(document_id)`, `(content_hash)`.
+- **Stored Procedure (`match_travel_documents`)**:
+  Performs server-side cosine distance ordering (`1 - (embedding <=> query_embedding)`) combined with relational predicate evaluation on destination, country, category, and user ownership under `SECURITY INVOKER`.
+
+### 8.4 Ingestion Pipeline & Deterministic Chunking
+
+1. **Format Support**: Markdown (`.md`), Plain Text (`.txt`), and JSON (`.json`).
+2. **Text Cleaning**: Strips null bytes, unprintable control characters, normalizes carriage returns, and collapses excessive blank lines.
+3. **Deterministic Chunking**:
+   - Primary boundary: Paragraphs (`\n\n`).
+   - Secondary boundary: Sentences (`[.!?]\s+`) when paragraphs exceed `rag_chunk_size` (default: 500 characters).
+   - Overlap: Bounded character window (`rag_chunk_overlap=80`).
+   - Pruning: Filters out trivially short fragments (< 25 characters).
+4. **Deduplication & Cost Optimization**:
+   - Ingestion computes SHA-256 hash of entire cleaned text.
+   - If an identical document hash exists in the ingestion cache, existing chunks are reused without invoking external embedding APIs.
+
+### 8.5 Security, RLS & Private Document Isolation
+
+- **Row Level Security**:
+  - `is_public = true` allows public read access for curated baseline destination guides.
+  - `auth.uid() = user_id` enforces strict tenant isolation for user-uploaded private travel documents.
+  - A user cannot retrieve or inspect another user's private travel documents under any query condition.
+- **Prompt Injection Defense**:
+  - All retrieved chunks are explicitly tagged with `untrusted: True`.
+  - Injected context is sanitized against adversarial directive keywords (`Ignore previous instructions`, `SYSTEM:`, `<script>`).
+  - Context is isolated in `<curated_travel_knowledge>` XML blocks instructing reasoning models to treat the content solely as factual reference data.
+
+### 8.6 DEMO_MODE Offline Operation
+
+In development, unit testing, or interview demonstrations (`DEMO_MODE=true` or missing `OPENAI_API_KEY`):
+- `MockEmbeddingService`: Generates deterministic, unit-normalized 1536-dimensional float vectors from text SHA-256 hashes and token buckets.
+- `MockKnowledgeStore`: Maintains an in-memory vector store pre-seeded with rich curated guides for Tokyo, Paris, London, New York, Delhi, and Rome.
+- Computes exact mathematical cosine similarity offline with zero API latency and zero cost.
 
 ---
 

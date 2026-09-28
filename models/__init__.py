@@ -127,4 +127,25 @@ __all__ = [
     "SearchNewsOutput",
     "GetExchangeRateInput",
     "GetExchangeRateOutput",
+    "SourceTrustLevel",
+    "DocumentCategory",
+    "DocumentMetadata",
+    "DocumentChunk",
+    "RAGRetrievalQuery",
+    "RetrievedChunk",
+    "RAGRetrievalResult",
+    "sanitize_retrieved_content",
+    "format_retrieved_context_defensively",
 ]
+
+from models.rag import (
+    SourceTrustLevel,
+    DocumentCategory,
+    DocumentMetadata,
+    DocumentChunk,
+    RAGRetrievalQuery,
+    RetrievedChunk,
+    RAGRetrievalResult,
+    sanitize_retrieved_content,
+    format_retrieved_context_defensively,
+)

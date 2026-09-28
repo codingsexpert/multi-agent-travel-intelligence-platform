@@ -3,6 +3,8 @@
 from typing import Dict, Any, List
 from graph.state import TravelState, WorkflowStatus
 from models.specialized_options import DestinationResearch
+from models.rag import RAGRetrievalQuery
+from rag.retriever import travel_knowledge_retriever
 from mcp.client import MCPClient
 from agents.base_agent import execute_agent_safely
 
@@ -101,7 +103,36 @@ def research_agent_node(state: TravelState) -> Dict[str, Any]:
 
         tool_calls: List[Dict[str, Any]] = []
 
-        # 1. Invoke Search MCP: web_search
+        # 1. RAG Knowledge Retrieval: Curated cultural norms, etiquette & tips
+        rag_query = RAGRetrievalQuery(
+            query=f"{destination} customs etiquette tips cultural norms rules",
+            destination=destination,
+            category="customs",
+            top_k=3,
+        )
+        rag_res = travel_knowledge_retriever.retrieve(rag_query)
+
+        rag_telemetry: Dict[str, Any] = {
+            "agent_name": "research",
+            "query": rag_query.query,
+            "destination": destination,
+            "chunks_retrieved": len(rag_res.results),
+            "top_score": rag_res.top_score,
+            "sources_count": len(rag_res.sources),
+            "mode": rag_res.mode,
+            "latency_ms": rag_res.latency_ms,
+        }
+
+        tool_calls.append({
+            "tool_name": "rag_knowledge_retrieval",
+            "agent": "research",
+            "status": "SUCCESS" if rag_res.results else "EMPTY",
+            "latency_ms": rag_res.latency_ms,
+            "mode": rag_res.mode,
+            "details": f"{len(rag_res.results)} curated chunks retrieved (top score: {rag_res.top_score})",
+        })
+
+        # 2. Invoke Search MCP: web_search
         search_res = MCPClient.call_tool(
             agent_name="research",
             tool_name="web_search",
@@ -110,6 +141,11 @@ def research_agent_node(state: TravelState) -> Dict[str, Any]:
         )
 
         sources = ["[DEMO_DATA] Search MCP Server (Mock Web Index)"]
+        # Include verified RAG sources without fabricating URLs
+        for s in rag_res.sources:
+            if s not in sources:
+                sources.append(s)
+
         if search_res.success and search_res.data:
             tool_calls.append({
                 "tool_name": "web_search",
@@ -122,7 +158,7 @@ def research_agent_node(state: TravelState) -> Dict[str, Any]:
                 if item.get("url"):
                     sources.append(item["url"])
 
-        # 2. Invoke Search MCP: search_news
+        # 3. Invoke Search MCP: search_news
         news_res = MCPClient.call_tool(
             agent_name="research",
             tool_name="search_news",
@@ -225,6 +261,7 @@ def research_agent_node(state: TravelState) -> Dict[str, Any]:
             "research_results": research_model.model_dump(),
             "planning_status": WorkflowStatus.PARTIAL_RESULTS.value if has_failure else WorkflowStatus.READY_FOR_VALIDATION.value,
             "tool_calls": tool_calls,
+            "rag_retrievals": [rag_telemetry],
         }
 
     delta, run_record = execute_agent_safely(

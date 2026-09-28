@@ -287,8 +287,34 @@ Agent
 
         st.table(mcp_table_rows)
 
+    # RAG Retrieval Telemetry (Phase 9)
     st.markdown("---")
-    st.markdown("### System Architecture Roster (Phase 7)")
+    st.markdown("### 📚 RAG Knowledge Retrieval Audit (Phase 9)")
+    st.markdown(
+        "Verifiable curated travel grounding via **Supabase pgvector** and semantic vector similarity. "
+        "Captures query parameters, chunks retrieved, top similarity scores, and source attribution."
+    )
+
+    rag_retrievals = travel_state.get("rag_retrievals", [])
+    if not rag_retrievals:
+        st.info("ℹ️ **No RAG Retrievals Recorded Yet**: Run a travel planning workflow to view vector retrieval traces.")
+    else:
+        rag_rows = []
+        for r in rag_retrievals:
+            rag_rows.append({
+                "Agent": f"{r.get('agent_name', 'system').capitalize()} Agent",
+                "Query": r.get("query", ""),
+                "Destination": r.get("destination", "Global"),
+                "Chunks Retrieved": r.get("chunks_retrieved", 0),
+                "Top Score": f"{r.get('top_score', 0.0):.3f}",
+                "Sources Count": r.get("sources_count", 0),
+                "Mode": "🟢 LIVE" if r.get("mode") == "LIVE" else "🟡 DEMO",
+                "Latency": f"{r.get('latency_ms', 0.0):.1f}ms",
+            })
+        st.table(rag_rows)
+
+    st.markdown("---")
+    st.markdown("### System Architecture Roster (Phase 9)")
 
     for idx, agent in enumerate(PLANNED_AGENTS, 1):
         with st.container():

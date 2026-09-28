@@ -3,6 +3,8 @@
 from typing import Dict, Any, List
 from graph.state import TravelState
 from models.specialized_options import ActivityOption
+from models.rag import RAGRetrievalQuery
+from rag.retriever import travel_knowledge_retriever
 from mcp.client import MCPClient
 from agents.base_agent import execute_agent_safely
 
@@ -156,7 +158,36 @@ def activity_agent_node(state: TravelState) -> Dict[str, Any]:
             currency=currency,
         )
 
-        # 1. Invoke Maps MCP: search_places
+        # 1. RAG Knowledge Retrieval: Curated cultural & attraction intelligence
+        rag_query = RAGRetrievalQuery(
+            query=f"{destination} historic landmarks cultural attractions experiences",
+            destination=destination,
+            category="attractions",
+            top_k=3,
+        )
+        rag_res = travel_knowledge_retriever.retrieve(rag_query)
+
+        rag_telemetry: Dict[str, Any] = {
+            "agent_name": "activity",
+            "query": rag_query.query,
+            "destination": destination,
+            "chunks_retrieved": len(rag_res.results),
+            "top_score": rag_res.top_score,
+            "sources_count": len(rag_res.sources),
+            "mode": rag_res.mode,
+            "latency_ms": rag_res.latency_ms,
+        }
+
+        tool_calls.append({
+            "tool_name": "rag_knowledge_retrieval",
+            "agent": "activity",
+            "status": "SUCCESS" if rag_res.results else "EMPTY",
+            "latency_ms": rag_res.latency_ms,
+            "mode": rag_res.mode,
+            "details": f"{len(rag_res.results)} curated chunks retrieved (top score: {rag_res.top_score})",
+        })
+
+        # 2. Invoke Maps MCP: search_places
         places_res = MCPClient.call_tool(
             agent_name="activity",
             tool_name="search_places",
@@ -181,7 +212,7 @@ def activity_agent_node(state: TravelState) -> Dict[str, Any]:
 
             places = places_res.data.get("places", [])
             for idx, p in enumerate(places):
-                # 2. Invoke Maps MCP: estimate_travel_time
+                # 3. Invoke Maps MCP: estimate_travel_time
                 tt_res = MCPClient.call_tool(
                     agent_name="activity",
                     tool_name="estimate_travel_time",
@@ -206,6 +237,14 @@ def activity_agent_node(state: TravelState) -> Dict[str, Any]:
                 if idx == 0:
                     cost = 0.0
 
+                desc = f"Curated experience in {destination} featuring authentic architecture and cultural heritage."
+                source_label = "[DEMO_DATA] Maps MCP Server (Mock Places Directory)"
+                if rag_res.results:
+                    # Enrich with top curated RAG chunk context
+                    matching_chunk = rag_res.results[idx % len(rag_res.results)]
+                    desc = f"{matching_chunk.content[:160]}..."
+                    source_label = matching_chunk.citation_str
+
                 activities.append(
                     ActivityOption(
                         name=p.get("name", f"{destination} Heritage Site"),
@@ -215,8 +254,8 @@ def activity_agent_node(state: TravelState) -> Dict[str, Any]:
                         estimated_cost=cost,
                         currency=currency,
                         best_time=slot,
-                        description=f"Curated experience in {destination} featuring authentic architecture and cultural heritage.",
-                        source="[DEMO_DATA] Maps MCP Server (Mock Places Directory)",
+                        description=desc,
+                        source=source_label,
                         demo_data=True,
                     ).model_dump()
                 )
@@ -239,6 +278,7 @@ def activity_agent_node(state: TravelState) -> Dict[str, Any]:
         return {
             "activities": activities,
             "tool_calls": tool_calls,
+            "rag_retrievals": [rag_telemetry],
         }
 
     delta, run_record = execute_agent_safely(

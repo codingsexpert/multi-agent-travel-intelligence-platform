@@ -83,3 +83,20 @@ class GuardrailViolationError(AppError):
             details=full_details,
             code="GUARDRAIL_VIOLATION",
         )
+
+
+class EmbeddingConfigurationError(ConfigurationError):
+    """Raised when embedding provider credentials or configurations are missing."""
+
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message=message, details=details)
+        self.code = "EMBEDDING_CONFIG_ERROR"
+        self.user_message = "Vector embedding service is not configured. Please supply API credentials or enable DEMO_MODE."
+
+
+class RAGRetrievalError(ServiceError):
+    """Raised when knowledge ingestion or vector similarity retrieval fails."""
+
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(service_name="RAGKnowledgeRetriever", message=message, details=details)
+        self.code = "RAG_RETRIEVAL_ERROR"

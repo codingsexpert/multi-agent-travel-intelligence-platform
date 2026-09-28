@@ -59,6 +59,32 @@ class Settings(BaseSettings):
     brave_search_api_key: Optional[SecretStr] = Field(default=None, description="Brave Search API Key")
     google_places_api_key: Optional[SecretStr] = Field(default=None, description="Google Places API Key (optional; OSM/Photon is default)")
 
+    # RAG & pgvector Knowledge Configuration (Phase 9)
+    embedding_provider: str = Field(
+        default="openai",
+        description="Embedding provider (openai, mock)",
+    )
+    embedding_model: str = Field(
+        default="text-embedding-3-small",
+        description="Embedding model name",
+    )
+    embedding_dimension: int = Field(
+        default=1536,
+        description="Vector dimension matching model and database column",
+    )
+    rag_top_k: int = Field(
+        default=4,
+        description="Default number of relevant chunks to retrieve",
+    )
+    rag_chunk_size: int = Field(
+        default=500,
+        description="Character/token window target for document chunking",
+    )
+    rag_chunk_overlap: int = Field(
+        default=80,
+        description="Overlap between adjacent chunks in characters/tokens",
+    )
+
     @property
     def is_production(self) -> bool:
         """Check if running in production."""
@@ -107,6 +133,13 @@ class Settings(BaseSettings):
             and self.langsmith_api_key
             and self.langsmith_api_key.get_secret_value()
         )
+
+    @property
+    def has_embedding_config(self) -> bool:
+        """Check if embedding credentials are validly configured."""
+        if self.embedding_provider.lower() == "mock":
+            return True
+        return bool(self.openai_api_key and self.openai_api_key.get_secret_value())
 
 
 @lru_cache

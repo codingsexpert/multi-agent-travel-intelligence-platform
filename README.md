@@ -304,7 +304,7 @@ The platform is developed in **18 distinct phases**:
 - [x] **Phase 6: Budget Engine & Validator/Safety Agent (Pure Python)** *(Completed)*
 - [x] **Phase 7: Model Context Protocol (MCP) Integration** *(Completed)*
 - [x] **Phase 8: Real External APIs & Provider Integration** *(Completed)*
-- [ ] **Phase 9: RAG Knowledge Base & Supabase pgvector**
+- [x] **Phase 9: RAG Knowledge Base & Supabase pgvector** *(Completed)*
 - [ ] **Phase 10: Live Web Search Integration**
 - [ ] **Phase 11: Guardrails & Security Implementation**
 - [ ] **Phase 12: Dynamic Replanning Engine**
@@ -314,6 +314,63 @@ The platform is developed in **18 distinct phases**:
 - [ ] **Phase 16: Comprehensive Testing & Evaluation**
 - [ ] **Phase 17: Production UI Polish & Experience**
 - [ ] **Phase 18: Deployment & Interview Runbook**
+
+---
+
+## 📚 Phase 9: RAG Knowledge Base & Supabase pgvector
+
+Phase 9 introduces an enterprise-grade **Retrieval-Augmented Generation (RAG)** pipeline using **Supabase PostgreSQL with pgvector**, HNSW indexing, and semantic similarity search to provide stable, curated travel knowledge to agents.
+
+### Information Architecture Distinction
+
+```
+                USER QUERY
+                     ↓
+                  AGENT
+                     ↓
+              RAG RETRIEVER
+                     ↓
+             Supabase pgvector
+                     ↓
+          Semantic + Metadata Filter
+                     ↓
+             Relevant Chunks
+                     ↓
+                   AGENT
+```
+
+| Source Layer | Role & Scope | Examples | Engine |
+| :--- | :--- | :--- | :--- |
+| **RAG Knowledge Base** | **Stable / Curated Knowledge** | Local customs, temple manners, attraction history, transit rules, neighborhood guides | Supabase pgvector + HNSW index |
+| **MCP / API Gateway** | **Structured Live Information** | Flight availability, hotel pricing, real-time weather forecasts, foreign exchange rates | Amadeus GDS, Open-Meteo, Frankfurter ECB |
+| **Web Search (Phase 10)** | **Fresh / Current Information** | Transport strikes, festival dates, breaking travel advisories, emergency bulletins | Tavily / Brave Search API |
+
+### Key RAG Implementation Details
+
+1. **pgvector Storage**:
+   - Dedicated table: `public.travel_documents` with 1536-dimensional vector column (`vector(1536)`).
+   - High-performance HNSW index (`idx_travel_documents_embedding_hnsw`) with cosine similarity (`vector_cosine_ops`).
+   - Stored procedure: `match_travel_documents` executing combined cosine distance and metadata filtering.
+2. **Embedding Configuration**:
+   - Default Model: OpenAI `text-embedding-3-small` (dimension: 1536, metric: cosine similarity).
+   - Configurable via `config/settings.py` (`embedding_model`, `embedding_dimension`, `embedding_provider`).
+   - Missing credentials in live mode raise explicit `EmbeddingConfigurationError`.
+   - `MockEmbeddingService`: Generates deterministic, unit-normalized 1536-dimensional vectors from text hashes for complete offline evaluation during `DEMO_MODE=true`.
+3. **Deterministic Ingestion & Deduplication**:
+   - Supports Markdown (.md), Plain Text (.txt), and JSON (.json).
+   - Cleans formatting, strips unprintable control characters, and collapses whitespace.
+   - Deterministic chunking preserving paragraph and sentence boundaries with configurable window (`rag_chunk_size=500`, `rag_chunk_overlap=80`).
+   - Deduplication tracking using SHA-256 content hashes to prevent duplicate chunks and unnecessary embedding costs.
+4. **Hybrid Retrieval & Metadata Filtering**:
+   - Combines vector cosine similarity with strict metadata filtering on `destination`, `country`, `category` (e.g. customs, attractions, food, transport), and `source_trust`.
+5. **Private Document Isolation & RLS**:
+   - Row Level Security ensures global curated guides (`is_public = true`) are visible to all users, while private documents (`is_public = false`) are strictly accessible only by their owning `user_id`.
+6. **Prompt Injection Defense & Untrusted Data Sandboxing**:
+   - All retrieved chunks are explicitly tagged with `untrusted: True`.
+   - Defenses sanitize directive jailbreak phrases (`Ignore previous instructions`, `SYSTEM:`, `<script>`).
+   - Context is injected into agent prompts within isolated `<curated_travel_knowledge>` blocks with clear developer instructions that content represents factual reference data, not system instructions.
+7. **No Fabricated Citations**:
+   - Chunks preserve exact source names, trust classifications (`OFFICIAL`, `CURATED`, `REFERENCE`, `UNKNOWN`), and canonical URLs. Internal documents without URLs are marked `[Curated Knowledge]` without fabricating web addresses.
 
 ---
 

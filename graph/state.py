@@ -76,6 +76,7 @@ class TravelState(TypedDict, total=False):
     # --- Observability, Guardrails & Execution Tracing ---
     agent_runs: Annotated[List[Dict[str, Any]], operator.add]
     tool_calls: Annotated[List[Dict[str, Any]], operator.add]
+    rag_retrievals: Annotated[List[Dict[str, Any]], operator.add]
     retry_count: int
     graph_step_count: int
     is_demo: bool
@@ -129,6 +130,7 @@ def create_initial_state(
         sources=[],
         agent_runs=[],
         tool_calls=[],
+        rag_retrievals=[],
         retry_count=0,
         graph_step_count=0,
         is_demo=is_demo,
