@@ -199,3 +199,19 @@ We establish explicit architectural boundaries where **LLM Agents are strictly f
 ### Summary Rule
 > **Agents are for Reasoning, Qualitative Evaluation, and Natural Language Synthesis.**  
 > **Python is for Arithmetic, Hard Constraint Enforcement, and Deterministic Logic.**
+
+---
+
+## ADR-11: LangGraph Core Engine, Typed TravelState & Planner Agent Boundaries
+
+### Context
+In Phase 4, we introduce the first agentic reasoning node: the Planner Agent. We need a clear division between intake reasoning, deterministic validation, clarification dialogue, and future specialized agent execution.
+
+### Decision
+1. **LangGraph as State Machine**: We use `langgraph.graph.StateGraph` backed by a strongly typed `TravelState` TypedDict. Transitions between nodes are governed by deterministic Python conditional routing (`route_after_planner`), not LLM intent parsing.
+2. **Planner Agent Responsibility**: The Planner Agent only extracts parameters, detects missing critical requirements, and identifies conflicts. It is strictly forbidden from searching flights, scraping hotels, or writing full itineraries.
+3. **Structured Pydantic Validation**: All extracted specifications must pass through `NormalizedTravelRequest` and `PlannerResult`. Raw LLM outputs are never directly injected into state.
+4. **Deterministic Validation Post-Processing**: Date order, positive duration, traveler count, and budget non-negativity are verified deterministically in Python.
+5. **Loop and Retry Limits**: Execution is protected by `MAX_GRAPH_STEPS = 10` and `MAX_PLANNER_RETRIES = 2`.
+6. **Graceful DEMO_MODE Fallback**: When live LLM credentials are absent or in `DEMO_MODE=true`, `DemoPlannerExtractor` handles extraction deterministically, flagging outputs with `is_demo=True`.
+

@@ -8,6 +8,7 @@ from app.state.session import (
     set_current_conversation_id,
 )
 from repositories import conversation_repository, message_repository
+from services.planning_service import run_travel_planning
 
 
 def render_conversation_page() -> None:
@@ -61,8 +62,7 @@ def render_conversation_page() -> None:
         st.caption(f"Thread ID: `{conv_id[:8]}...`")
 
     st.info(
-        "ℹ️ **Conversational Persistence Active**: Messages in this thread are saved via `MessageRepository`. "
-        "The LangGraph LLM engine will be connected in Phase 4. Responses below are structural placeholders."
+        "ℹ️ **LangGraph Multi-Agent Conversation Active**: Prompts are analyzed by the LangGraph Planner Agent to extract requirements, identify missing parameters, and guide planning."
     )
 
     # Load messages from repository
@@ -81,26 +81,15 @@ def render_conversation_page() -> None:
                 st.caption(f"Sent at: {msg.get('created_at', '')[:19].replace('T', ' ')}")
 
     # Input Box
-    user_input = st.chat_input("Ask a question or adjust your trip requirements...")
+    user_input = st.chat_input("Ask a question, enter requirements, or answer clarification questions...")
 
     if user_input:
-        # Save user message
-        message_repository.create_message(
-            conversation_id=conv_id,
-            role="user",
-            content=user_input,
-        )
-
-        # Generate and save assistant placeholder response
-        placeholder_reply = (
-            f"[Phase 3 Repository Placeholder] Received your message: '{user_input}'. "
-            "In Phase 4, the Planner Agent in LangGraph will parse this prompt, coordinate specialized agents, "
-            "and synthesize live recommendations."
-        )
-        message_repository.create_message(
-            conversation_id=conv_id,
-            role="assistant",
-            content=placeholder_reply,
-        )
-
+        with st.spinner("Analyzing requirements with Planner Agent..."):
+            run_travel_planning(
+                user_request=user_input,
+                user_id=current_user["id"],
+                trip_id=current_trip_id,
+                conversation_id=conv_id,
+                session_state=st.session_state,
+            )
         st.rerun()

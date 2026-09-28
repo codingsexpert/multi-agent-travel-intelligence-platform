@@ -16,6 +16,7 @@ from app.state.session import (
 )
 from app.components.trip_summary_card import render_trip_summary_card
 from repositories import trip_repository, conversation_repository, message_repository
+from services.planning_service import run_travel_planning
 
 PREFERENCE_OPTIONS = [
     "Food",
@@ -173,7 +174,7 @@ def render_new_trip_page() -> None:
                 title=conv_title,
             )
 
-            # Step 4: Store initial user travel request as initial message
+            # Step 4: Run LangGraph Planning Workflow
             msg_content = (
                 f"Trip Request: {travel_req.origin} to {travel_req.destination}, "
                 f"{travel_req.start_date} to {travel_req.end_date} for {travel_req.travelers} traveler(s). "
@@ -181,10 +182,12 @@ def render_new_trip_page() -> None:
                 f"Interests: {', '.join(selected_interests) if selected_interests else 'General'}. "
                 f"Notes: {additional_notes or 'None'}"
             )
-            message_repository.create_message(
+            planning_state = run_travel_planning(
+                user_request=msg_content,
+                user_id=current_user["id"],
+                trip_id=created_trip["id"],
                 conversation_id=conv["id"],
-                role="user",
-                content=msg_content,
+                session_state=st.session_state,
             )
 
             # Step 5: Update session state
@@ -192,14 +195,19 @@ def render_new_trip_page() -> None:
             set_current_conversation_id(conv["id"])
 
             # Step 6: User feedback
-            if created_trip.get("is_demo"):
-                st.warning("⚠️ **Demo data — not persisted**: Running in DEMO_MODE without Supabase credentials. Trip stored in temporary in-memory mock repository.")
+            if created_trip.get("is_demo") or planning_state.get("is_demo"):
+                st.info("ℹ️ **DEMO_MODE Active**: Running offline using mock storage and deterministic Planner Agent.")
             else:
                 st.success(f"✅ Trip successfully saved to Supabase! (Trip ID: `{created_trip['id']}`)")
 
-            st.info(
-                "ℹ️ **LangGraph Planning Workflow**: Orchestrator will be connected in Phase 4. Conversation thread initialized."
-            )
+            if planning_state.get("clarification_required"):
+                st.warning("⚠️ **Clarification Required**: Additional travel details needed before planning.")
+                for q in planning_state.get("clarification_questions", []):
+                    st.markdown(f"• {q}")
+                st.caption("💬 Head to the **Conversation** page to provide these details to the assistant.")
+            else:
+                st.success("✅ **Planning requirements validated.** Status: `READY_FOR_SPECIALIZED_AGENTS`")
+                st.caption("Next step: Specialized agents (Flights, Hotels, Activities) will be orchestrated in subsequent phases.")
 
             st.markdown("### Submitted Trip Overview")
             render_trip_summary_card(travel_req)

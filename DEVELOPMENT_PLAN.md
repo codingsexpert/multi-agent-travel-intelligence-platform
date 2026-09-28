@@ -148,20 +148,30 @@ This development plan breaks down the construction of the platform into **18 dis
 
 ---
 
-## Phase 4: LangGraph Core Engine & Planner Agent
-- **Objective**: Initialize the central LangGraph state graph, define state schemas with Pydantic v2, and implement the Planner Agent.
+## Phase 4: LangGraph Core Engine & Planner Agent (Completed)
+- **Objective**: Initialize the central LangGraph state graph, define state schemas with Pydantic v2, and implement the Planner Agent with clarification routing, structured output extraction, and loop protection.
 - **Implementation Tasks**:
-  1. Define global state schema `src/graph/state.py` (`TripState`) and data models `src/schemas/trip.py` (`TripRequirementSpec`, `FlightPreferences`, `HotelPreferences`, `BudgetConstraints`).
-  2. Build Planner Agent in `src/agents/planner.py` using structured prompt and structured output parsing.
-  3. Create core graph definition in `src/graph/workflow.py` linking input -> Planner node.
-  4. Implement async runner to execute the graph from Streamlit.
+  1. Defined strongly-typed `TravelState` TypedDict and `WorkflowStatus` enum in `graph/state.py`.
+  2. Built Pydantic schemas in `models/planner.py`: `NormalizedTravelRequest`, `ClarificationRequest`, and `PlannerResult`.
+  3. Created LLM abstraction and deterministic fallback in `services/llm_service.py` (`LLMService` with `DemoPlannerExtractor`) supporting multilingual/Hinglish patterns and strict retry limits (`MAX_PLANNER_RETRIES = 2`).
+  4. Implemented Planner reasoning node in `agents/planner.py` with deterministic validation and loop protection (`MAX_GRAPH_STEPS = 10`).
+  5. Implemented Clarification node in `agents/clarification.py` to route incomplete or conflicting requirements to `NEEDS_CLARIFICATION`.
+  6. Built and compiled the LangGraph StateGraph workflow in `graph/workflow.py`: `START -> planner -> [conditional router] -> clarification / END (READY_FOR_SPECIALIZED_AGENTS)`.
+  7. Implemented planning execution API in `services/planning_service.py` (`run_travel_planning`), integrating trip context, conversation message history, session state sync, and `agent_runs` telemetry.
+  8. Integrated with Streamlit UI in `app/pages/new_trip.py` and `app/pages/conversation.py`.
+  9. Added comprehensive unit and integration tests across 5 test suites (`tests/test_planner_models.py`, `tests/test_demo_extractor.py`, `tests/test_llm_service.py`, `tests/test_langgraph_workflow.py`, `tests/test_planning_service.py`).
 - **Files / Components**:
-  - `src/schemas/trip.py`, `src/graph/state.py`, `src/graph/workflow.py`
-  - `src/agents/planner.py`, `tests/test_planner.py`
+  - `graph/state.py`, `graph/workflow.py`, `graph/__init__.py`
+  - `models/planner.py`, `models/__init__.py`
+  - `agents/planner.py`, `agents/clarification.py`, `agents/__init__.py`
+  - `services/llm_service.py`, `services/planning_service.py`
+  - `app/pages/new_trip.py`, `app/pages/conversation.py`
+  - `tests/test_planner_models.py`, `tests/test_demo_extractor.py`, `tests/test_llm_service.py`, `tests/test_langgraph_workflow.py`, `tests/test_planning_service.py`
 - **Testing Requirements**:
-  - Test Planner Agent with diverse prompts (budget constraints, multi-city requests, family requirements); verify 100% extraction into valid Pydantic models.
+  - 57 unit and integration tests passing (`pytest -v`).
+  - Tested complete requests, missing parameters, date conflicts, negative budget, zero duration/travelers, loop protection, retry limits, and DEMO_MODE fallback.
 - **Expected Output**:
-  - Graph accepts natural language user input and outputs structured `TripRequirementSpec`.
+  - Graph accepts natural language user input and outputs structured `PlannerResult` reaching `READY_FOR_SPECIALIZED_AGENTS` or `NEEDS_CLARIFICATION`.
 
 ---
 

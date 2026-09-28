@@ -7,9 +7,18 @@ from models.travel_request import (
     TripMetadata,
 )
 
+from models.planner import (
+    NormalizedTravelRequest,
+    ClarificationRequest,
+    PlannerResult,
+)
+
 __all__ = [
     "TravelRequest",
     "TravelerPreferences",
     "TripConstraints",
     "TripMetadata",
+    "NormalizedTravelRequest",
+    "ClarificationRequest",
+    "PlannerResult",
 ]

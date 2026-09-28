@@ -127,9 +127,41 @@ stateDiagram-v2
     OutputGuardrail --> [*]
 ```
 
-### 3.1 Graph Structural Design
+### 3.1 Phase 4 Workflow Engine & Planner Architecture
+
+Phase 4 establishes the core LangGraph state machine and the first reasoning node (Planner Agent):
+
+```mermaid
+graph TD
+    START([START]) --> Planner[Planner Agent]
+    Planner --> Check{Requirements Complete?}
+    Check -- No --> Clarification[Clarification Node]
+    Check -- Yes --> Ready[Ready for Specialized Agents]
+    Clarification --> END([END])
+    Ready --> END([END])
+```
+
+#### Core Components & Responsibilities
+1. **TravelState Schema (`graph/state.py`)**:
+   - Central `TypedDict` capturing identity context (`user_id`, `trip_id`, `conversation_id`, `original_request`), normalized requirements (`origin`, `destination`, `start_date`, `end_date`, `duration`, `travelers`, `budget`, `currency`), preferences (`interests`, `travel_style`, `accommodation_preference`, `food_preferences`, `constraints`), execution state (`planning_status`, `clarification_required`, `clarification_questions`, `warnings`, `errors`), and future agent slots (`flight_options`, `hotel_options`, `activities`, `weather`, `budget_breakdown`, `itinerary`).
+2. **Planner Agent Node (`agents/planner.py`)**:
+   - Reads arbitrary natural language travel requests (multilingual, English, Hinglish).
+   - Extracts structured parameters, detects missing critical requirements, and identifies conflicting constraints.
+   - Enforces loop protection (`MAX_GRAPH_STEPS = 10`) and retry limits (`MAX_PLANNER_RETRIES = 2`).
+   - Does **NOT** search the web, book flights, or synthesize final itineraries (reserved for specialized agents in subsequent phases).
+3. **Clarification Node (`agents/clarification.py`)**:
+   - Routes incomplete requests to `NEEDS_CLARIFICATION`, formatting structured, user-friendly clarification questions.
+4. **Structured Output (`models/planner.py`)**:
+   - Validated through Pydantic schemas: `NormalizedTravelRequest`, `ClarificationRequest`, and `PlannerResult`.
+5. **DEMO_MODE / Offline Execution (`services/llm_service.py`)**:
+   - When running without live LLM credentials or with `DEMO_MODE=true`, routes to `DemoPlannerExtractor`.
+   - Tags outputs with `is_demo=True` and clearly identifies assumptions without simulating artificial responses.
+6. **Future Agent Extensibility**:
+   - Future domain agents (Flight, Hotel, Activity, Weather, Research, Budget) will fan out from `READY_FOR_SPECIALIZED_AGENTS` without altering the initial intake graph.
+
+### 3.2 Graph Structural Design
 - **Deterministic Routing**: Conditional edges check typed flags in the graph state rather than relying on LLM routing decisions for state transitions.
-- **Cycle Prevention**: A `replan_counter` tracks iterations; if replanning exceeds `MAX_REPLAN_CYCLES` (default 3), the graph transitions to a fallback human-assistance state.
+- **Cycle Prevention**: Loop protection limits (`MAX_GRAPH_STEPS = 10`) guarantee termination; retries on LLM parsing failures are strictly bounded to `MAX_PLANNER_RETRIES = 2`.
 - **State Checkpointing**: Every node transition creates a persistent snapshot in the Supabase/Memory checkpointer, enabling seamless crash recovery and human approval suspension.
 
 ---

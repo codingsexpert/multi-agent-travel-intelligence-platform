@@ -1,0 +1,160 @@
+"""Planning service orchestrating LangGraph execution, persistence, and state tracking."""
+
+import time
+from typing import Optional, Dict, Any
+from graph.state import TravelState, WorkflowStatus, create_initial_state
+from graph.workflow import travel_graph
+from repositories import (
+    trip_repository as default_trip_repo,
+    conversation_repository as default_conv_repo,
+    message_repository as default_msg_repo,
+    agent_run_repository as default_run_repo,
+)
+from repositories.trip_repository import TripRepository
+from repositories.conversation_repository import ConversationRepository
+from repositories.message_repository import MessageRepository
+from repositories.agent_run_repository import AgentRunRepository
+from utils.logger import logger
+
+
+def run_travel_planning(
+    user_request: str,
+    user_id: str,
+    trip_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
+    session_state: Optional[Dict[str, Any]] = None,
+    trip_repo: Optional[TripRepository] = None,
+    conv_repo: Optional[ConversationRepository] = None,
+    msg_repo: Optional[MessageRepository] = None,
+    run_repo: Optional[AgentRunRepository] = None,
+) -> TravelState:
+    """Execute LangGraph travel planning workflow with repository integration and observability.
+
+    Args:
+        user_request: Natural-language travel request or refinement prompt.
+        user_id: Authenticated or demo user identifier.
+        trip_id: Optional active trip UUID.
+        conversation_id: Optional active conversation UUID.
+        session_state: Optional Streamlit session dictionary for real-time UI synchronization.
+        trip_repo: Optional injected TripRepository for testing.
+        conv_repo: Optional injected ConversationRepository for testing.
+        msg_repo: Optional injected MessageRepository for testing.
+        run_repo: Optional injected AgentRunRepository for testing.
+
+    Returns:
+        Final TravelState after executing LangGraph workflow.
+    """
+    start_time = time.time()
+    t_repo = trip_repo or default_trip_repo
+    c_repo = conv_repo or default_conv_repo
+    m_repo = msg_repo or default_msg_repo
+    r_repo = run_repo or default_run_repo
+
+    logger.info(f"[PlanningService] Starting planning for user {user_id}, trip {trip_id}, conv {conversation_id}")
+
+    # 1. Load existing trip context if available
+    existing_trip_data: Optional[Dict[str, Any]] = None
+    if trip_id:
+        try:
+            existing_trip_data = t_repo.get_trip(trip_id=trip_id, user_id=user_id)
+        except Exception as e:
+            logger.warning(f"[PlanningService] Unable to load trip {trip_id}: {str(e)}")
+
+    # 2. Record incoming user message if conversation exists
+    if conversation_id:
+        try:
+            m_repo.create_message(
+                conversation_id=conversation_id,
+                role="user",
+                content=user_request,
+            )
+        except Exception as e:
+            logger.warning(f"[PlanningService] Failed to persist user message: {str(e)}")
+
+    # 3. Create initial LangGraph state
+    initial_state = create_initial_state(
+        original_request=user_request,
+        user_id=user_id,
+        trip_id=trip_id,
+        conversation_id=conversation_id,
+        is_demo=t_repo.is_demo_mode,
+        existing_trip_data=existing_trip_data,
+    )
+
+    # 4. Invoke LangGraph workflow
+    try:
+        final_state: TravelState = travel_graph.invoke(initial_state)
+    except Exception as e:
+        logger.error(f"[PlanningService] LangGraph execution error: {str(e)}")
+        final_state = dict(initial_state)  # type: ignore
+        final_state["planning_status"] = WorkflowStatus.FAILED.value
+        final_state["errors"] = [f"LangGraph execution failure: {str(e)}"]
+
+    duration_ms = round((time.time() - start_time) * 1000, 2)
+
+    # 5. Persist agent execution run for observability
+    if trip_id:
+        try:
+            run_rec = r_repo.create_agent_run(
+                trip_id=trip_id,
+                agent_name="planner_orchestrator",
+                metadata={
+                    "step_name": "phase_4_planner_graph",
+                    "original_request": user_request,
+                    "graph_steps": final_state.get("graph_step_count"),
+                    "execution_time_ms": duration_ms,
+                },
+            )
+            r_repo.update_agent_run(
+                run_id=run_rec["id"],
+                status="SUCCESS" if final_state.get("planning_status") != WorkflowStatus.FAILED.value else "FAILED",
+                error_message=final_state.get("errors")[0] if final_state.get("errors") else None,
+                metadata={
+                    "planning_status": final_state.get("planning_status"),
+                    "clarification_required": final_state.get("clarification_required"),
+                },
+            )
+        except Exception as e:
+            logger.warning(f"[PlanningService] Failed to record agent run: {str(e)}")
+
+    # 6. Persist assistant reply to conversation
+    if conversation_id:
+        try:
+            if final_state.get("clarification_required"):
+                questions = final_state.get("clarification_questions", [])
+                assistant_text = "I need a few details before planning:\n\n" + "\n".join(questions)
+            elif final_state.get("planning_status") == WorkflowStatus.READY_FOR_SPECIALIZED_AGENTS.value:
+                dest = final_state.get("destination", "your destination")
+                orig = final_state.get("origin", "your departure")
+                dur = final_state.get("duration")
+                curr = final_state.get("currency", "USD")
+                bgt = final_state.get("budget")
+                budget_str = f"{curr} {bgt:,.2f}" if bgt is not None else "Unspecified"
+                assistant_text = (
+                    f"✅ **Planning requirements validated.**\n\n"
+                    f"• **Route**: {orig} → {dest}\n"
+                    f"• **Duration**: {dur} days\n"
+                    f"• **Travelers**: {final_state.get('travelers')}\n"
+                    f"• **Budget Limit**: {budget_str}\n\n"
+                    f"Status: `{final_state.get('planning_status')}`. Next step: Specialized agents (Flights, Hotels, Activities) will be orchestrated in subsequent phases."
+                )
+            else:
+                assistant_text = f"Planning status: {final_state.get('planning_status')}."
+
+            m_repo.create_message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=assistant_text,
+            )
+        except Exception as e:
+            logger.warning(f"[PlanningService] Failed to record assistant reply message: {str(e)}")
+
+    # 7. Update session state if provided
+    if session_state is not None:
+        session_state["travel_state"] = final_state
+        session_state["workflow_status"] = final_state.get("planning_status")
+
+    logger.info(
+        f"[PlanningService] Planning completed in {duration_ms}ms with status: {final_state.get('planning_status')}"
+    )
+    return final_state
