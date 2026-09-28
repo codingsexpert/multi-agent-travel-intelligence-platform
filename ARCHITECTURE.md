@@ -556,18 +556,119 @@ In development, unit testing, or interview demonstrations (`DEMO_MODE=true` or m
 
 ---
 
-## 8. Web Search Architecture
+## 9. Web Search & Fresh Information Research Architecture (Phase 10)
 
-While RAG handles static travel knowledge, **Web Search** handles **fresh, volatile real-time conditions**:
-- Sudden airport terminal closures or airline strikes
-- Live festival and event dates
-- Seasonal weather anomalies or unexpected attraction renovations
-- Current currency exchange fluctuations
+Phase 10 introduces a secure, production-grade web research layer operating through the **Search MCP** gateway. This layer enables the platform to retrieve fresh, time-sensitive intelligence that must **not** come from static RAG or structured operational APIs.
 
-### Integration Pattern:
-- **Search Query Synthesizer**: The Research Agent formulates targeted, temporal search queries (e.g. `"Louvre museum renovation closures October 2026"`).
-- **Provider Gateway**: Uses search providers (Tavily / Brave Search API) optimized for LLM context retrieval.
-- **Content Deduplication & Truncation**: Retrieved markdown/snippets are scrubbed of HTML tags, deduplicated, and truncated to avoid token waste before entering the context window.
+### 9.1 Grounding Source-Selection Matrix
+
+```
+                    USER REQUEST
+                         ↓
+                 INFORMATION TYPE
+                         ↓
+        ┌────────────────┼────────────────┐
+        ↓                ↓                ↓
+      RAG             MCP/API         WEB SEARCH
+        ↓                ↓                ↓
+ Stable Knowledge    Live Structured   Fresh Info
+        └────────────────┼────────────────┘
+                         ↓
+                      AGENTS
+                         ↓
+                     VALIDATOR
+```
+
+### 9.2 Strict Separation of Concerns
+
+The platform enforces a deterministic tri-modal data access architecture:
+
+1. **Curated RAG (Supabase pgvector)**:
+   - **Scope**: Stable, curated travel knowledge.
+   - **Use Cases**: Cultural etiquette, local customs, historical monuments, subway rules, tipping taboos.
+   - **Characteristics**: Low latency (5–20ms), verified editorial quality, semi-static updates.
+2. **Operational MCP Tools (Real Provider APIs)**:
+   - **Scope**: Structured, transactional live data.
+   - **Use Cases**: Flight pricing and seat availability, hotel nightly rates, real-time weather forecasts, FX currency conversions.
+   - **Characteristics**: Typed Pydantic models, deterministic calculations, strict schemas.
+3. **Search MCP (Fresh Web Search & News)**:
+   - **Scope**: Fresh, volatile, unpredictable real-world conditions.
+   - **Use Cases**: Seasonal festivals, temporary attraction closures, transport strikes, breaking travel advisories, regional headlines.
+   - **Characteristics**: Real-time web crawl, untrusted data sandboxing, recency filtering.
+
+### 9.3 Search MCP Tool Roster
+
+Reasoning agents never call search APIs directly. All discovery flows through the standardized MCP gateway:
+
+```
+Research Agent
+      ↓
+Search MCP Client
+      ↓
+Search Provider Adapter (Tavily / Brave Search / Safe HTTP Fetcher)
+      ↓
+Fresh Web & News Payloads
+      ↓
+Security Extraction & Classification
+      ↓
+Research Agent
+```
+
+- **`web_search`**:
+  - *Inputs*: `query`, `destination`, `recency` (`today`, `24h`, `7d`, `30d`, `all`), `language`, `max_results`, `allowed_domains`.
+  - *Outputs*: List of `SearchResultItem` containing normalized titles, URLs, domains, snippets, `published_at`, `retrieved_at`, `source_type`, and `untrusted=True`.
+- **`search_news`**:
+  - *Inputs*: `query`, `destination`, `recency`, `limit`.
+  - *Outputs*: `SearchNewsOutput` prioritizing recent local headlines, transport strikes, and festival announcements.
+- **`fetch_page`**:
+  - *Inputs*: `url`, `max_length`.
+  - *Outputs*: Sandboxed text extraction (`title`, `headings`, `content`) with scripts, stylesheets, tracking tags, and navigation wrappers stripped.
+
+### 9.4 Source Trust Classification & Verification
+
+Every search result domain is classified into an explicit trust level:
+- **`OFFICIAL`**: Sovereign government agencies, embassies, municipal boards (`.gov`, `travel.state.gov`, `japan.travel`, `metro.tokyo.jp`, `visitlondon.com`).
+- **`NEWS`**: Major international and regional journalism outlets (`bbc.com`, `reuters.com`, `japantimes.co.jp`, `lemonde.fr`).
+- **`REFERENCE`**: Curated travel encyclopedias (`wikipedia.org`, `wikivoyage.org`, `lonelyplanet.com`).
+- **`COMMUNITY`**: Forums and social hubs (`reddit.com`, `tripadvisor.com`, `flyertalk.com`).
+- **`UNKNOWN`**: Unclassified web domains.
+
+#### Authoritative Rule for Sensitive Claims
+For visa requirements, entry mandates, health rules, and border restrictions:
+- The system **strictly prefers `OFFICIAL` sources**.
+- Community or secondary blogs are never used as sole authority.
+- When official verification is unavailable, the research result explicitly records **verification as incomplete** and issues an advisory warning.
+
+### 9.5 Multi-Source Discrepancies & Conflict Handling
+
+When independent sources present contradictory facts (e.g. market closure dates, renovation timelines):
+- The system **does not silently select one source**.
+- It creates a structured `ConflictingClaim` record:
+  - `topic`: e.g. "Tsukiji Outer Market Wednesday Operating Schedules"
+  - `claim_a` & `source_a` (with date)
+  - `claim_b` & `source_b` (with date)
+  - `uncertainty_note`: Actionable guidance on how travelers can navigate the ambiguity.
+
+### 9.6 Security Boundaries & Threat Modeling
+
+1. **SSRF & Private Network Defense**:
+   - `MCPSecurityManager.validate_url()` blocks loopback targets (`localhost`, `127.0.0.1`, `0.0.0.0`, `[::1]`).
+   - Blocks private RFC 1918 IPv4 ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) and IPv6 private/link-local ranges (`fe80::`, `fc00::`).
+   - Blocks cloud metadata endpoints (`169.254.169.254`, `metadata.google.internal`).
+   - Restricts protocols strictly to `http://` and `https://` (prohibiting `file://`, `ftp://`).
+2. **Prompt Injection Defense**:
+   - Web text is treated strictly as **UNTRUSTED DATA** (`untrusted: True`).
+   - Regex neutralizers detect and mask instruction override attempts (`Ignore previous instructions`, `SYSTEM INSTRUCTIONS:`, `developer mode`).
+   - Content cannot alter LangGraph state machine execution, grant permissions, or invoke tools.
+3. **Bounded Extraction**:
+   - Raw HTML downloads are capped at 500KB with 5-second timeouts.
+   - Text extraction strips `<script>`, `<style>`, `<nav>`, `<header>`, `<footer>`, `<aside>`, and `<iframe>` blocks.
+4. **Resiliency & Rate Limits**:
+   - **ProviderCache**: 15-minute in-memory cache for idempotent queries.
+   - **HTTP 429**: Respects `Retry-After` headers with bounded exponential backoff.
+   - **Bounded Retries**: Maximum 2 retries on 5xx network errors.
+   - **DEMO Mode**: Fully functional offline mock engine returning realistic dates and trust classifications.
+   - **LIVE Mode**: Real Tavily/Brave Search API; raises explicit `ProviderConfigurationError` when keys are unconfigured.
 
 ---
 

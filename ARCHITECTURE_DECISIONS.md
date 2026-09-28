@@ -356,3 +356,48 @@ In Phase 9, reasoning agents (Activity Agent, Research Agent, and Planner) requi
 8. **No Fabricated Citations**:
    - Every chunk retains source attribution, trust classification (`OFFICIAL`, `CURATED`, `REFERENCE`, `UNKNOWN`), and real canonical URLs. Documents without URLs are explicitly labeled `[Curated Knowledge]`.
 
+---
+
+## ADR-17: Web Search, Fresh Information Research, and Search MCP Architecture
+
+### Context
+In Phase 10, the multi-agent travel platform requires access to fresh, volatile, and time-sensitive intelligence (temporary attraction closures, transport strikes, seasonal festivals, breaking travel advisories, and official border requirements). Static RAG cannot serve these volatile facts, while structured operational APIs (Amadeus, Open-Meteo) only provide pricing and schedules. Furthermore, allowing agents to call external search APIs directly would couple agent reasoning to provider endpoints and bypass least-privilege security controls. Direct web retrieval also introduces Server-Side Request Forgery (SSRF) and indirect prompt injection vulnerabilities from unvetted third-party web content.
+
+### Decision
+1. **Strict Tri-Modal Information Separation**:
+   - **RAG Knowledge Base**: Stable, vetted, curated travel knowledge (etiquette, customs, attraction heritage, transit rules).
+   - **MCP Operational APIs**: Volatile, structured operational data (flight inventory, hotel rooms, weather forecasts, FX rates).
+   - **Search MCP / Web Search**: Fresh, unpredictable real-world intelligence (festivals, temporary closures, strikes, advisories, news).
+2. **Search MCP Gateway Boundary**:
+   - Agents never invoke search APIs directly. The Research Agent accesses search tools strictly through the Search MCP client gateway.
+   - MCP tools exposed:
+     - `web_search`: Structured query with recency (`today`, `24h`, `7d`, `30d`, `all`), max results, language, and domain filters.
+     - `search_news`: Specialized discovery for regional news, disruptions, and festival schedules.
+     - `fetch_page`: Sandboxed HTTP document retrieval for targeted inspection of official advisory pages.
+3. **Source Trust Classification & Official Verification**:
+   - Web domains are programmatically classified into 5 trust tiers: `OFFICIAL` (government, embassy, official tourism), `NEWS` (established journalism), `REFERENCE` (curated encyclopedias), `COMMUNITY` (forums), and `UNKNOWN`.
+   - Sensitive legal claims (visa rules, passport validity, border restrictions) **require `OFFICIAL` authority sources**. If official verification cannot be confirmed, the system explicitly reports verification as incomplete rather than fabricating requirements.
+4. **Source Discrepancies & Conflict Handling**:
+   - When independent sources report conflicting data (e.g. market operating hours, renovation dates), the system does not silently choose one.
+   - A structured `ConflictingClaim` record is generated containing both claims, sources, publication dates, and actionable uncertainty guidance for travelers.
+5. **SSRF & Private Network Defense**:
+   - `MCPSecurityManager.validate_url()` enforces strict URL validation before any outbound HTTP connection:
+     - Blocks loopbacks (`localhost`, `127.0.0.1`, `0.0.0.0`, `[::1]`).
+     - Blocks private RFC 1918 subnets (`10.x`, `192.168.x`, `172.16-31.x`) and IPv6 unique local / link-local addresses (`fc00::`, `fe80::`).
+     - Blocks cloud metadata endpoints (`169.254.169.254`, `metadata.google.internal`).
+     - Disallows dangerous schemes (`file://`, `ftp://`), permitting only HTTP/HTTPS.
+     - Enforces domain allowlists for page fetching.
+6. **Prompt Injection Defense & Untrusted Data Isolation**:
+   - All retrieved web content is tagged `untrusted: True`.
+   - Content sanitization strips `<script>`, `<style>`, `<nav>`, `<header>`, `<footer>`, `<aside>`, and tracking elements.
+   - Adversarial instructions (`Ignore previous instructions`, `SYSTEM INSTRUCTIONS:`, `developer mode`) are filtered and neutralized.
+   - Retrieved web content is treated strictly as data and can never alter LangGraph state flow, grant permissions, or invoke tools.
+7. **Rate Limiting, Bounded Retries & Resilient Caching**:
+   - Bounded retries (maximum 2 attempts) on 5xx errors; no indefinite retry loops.
+   - HTTP 429 response handling inspects `Retry-After` headers and applies bounded backoff.
+   - In-memory `ProviderCache` (15-minute TTL) prevents redundant searches and excessive upstream consumption.
+8. **DEMO vs LIVE Mode Determinism**:
+   - In `DEMO_MODE=true`: Deterministic mock results marked `DEMO` with realistic publication dates, trust classifications, and structured findings.
+   - In `DEMO_MODE=false`: Queries live Tavily AI or Brave Search API. If credentials are missing, raises explicit `ProviderConfigurationError` without fabricating live data.
+
+

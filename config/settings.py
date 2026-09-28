@@ -106,6 +106,11 @@ class Settings(BaseSettings):
         return bool(self.tavily_api_key and self.tavily_api_key.get_secret_value())
 
     @property
+    def has_brave_search_config(self) -> bool:
+        """Check if Brave search API key is provided."""
+        return bool(self.brave_search_api_key and self.brave_search_api_key.get_secret_value())
+
+    @property
     def has_openweather_config(self) -> bool:
         """Check if OpenWeatherMap API key is provided."""
         return bool(self.openweather_api_key and self.openweather_api_key.get_secret_value())

@@ -5,7 +5,7 @@ from graph.state import TravelState, WorkflowStatus
 from models.specialized_options import DestinationResearch
 from models.rag import RAGRetrievalQuery
 from rag.retriever import travel_knowledge_retriever
-from mcp.client import MCPClient
+from services.research_service import research_service
 from agents.base_agent import execute_agent_safely
 
 
@@ -132,47 +132,46 @@ def research_agent_node(state: TravelState) -> Dict[str, Any]:
             "details": f"{len(rag_res.results)} curated chunks retrieved (top score: {rag_res.top_score})",
         })
 
-        # 2. Invoke Search MCP: web_search
-        search_res = MCPClient.call_tool(
-            agent_name="research",
-            tool_name="web_search",
-            arguments={"query": f"{destination} travel etiquette customs safety", "max_results": 3},
+        # 2. Fresh Web Research via Search MCP: news, web search, page fetching, and conflict detection
+        fresh_res = research_service.execute_fresh_research(
+            destination=destination,
+            query_context=state.get("original_request", ""),
             is_demo=is_demo,
         )
 
-        sources = ["[DEMO_DATA] Search MCP Server (Mock Web Index)"]
-        # Include verified RAG sources without fabricating URLs
+        tool_calls.append({
+            "tool_name": "search_news",
+            "agent": "research",
+            "status": "SUCCESS",
+            "mode": fresh_res.data_mode,
+            "details": f"{len(fresh_res.findings)} current findings & news retrieved",
+        })
+
+        tool_calls.append({
+            "tool_name": "web_search",
+            "agent": "research",
+            "status": "SUCCESS",
+            "mode": fresh_res.data_mode,
+            "details": f"{len(fresh_res.sources)} sources evaluated ({'OFFICIAL' if fresh_res.official_verified else 'GENERAL'})",
+        })
+
+        if any(f.category == "official_notice" for f in fresh_res.findings):
+            tool_calls.append({
+                "tool_name": "fetch_page",
+                "agent": "research",
+                "status": "SUCCESS",
+                "mode": fresh_res.data_mode,
+                "details": "Sandboxed HTML extraction and verification from official portal",
+            })
+
+        sources = ["[DEMO_DATA] Search MCP Server (Fresh Web Index)" if is_demo else "Search MCP Server (Fresh Web Index)"]
         for s in rag_res.sources:
             if s not in sources:
                 sources.append(s)
-
-        if search_res.success and search_res.data:
-            tool_calls.append({
-                "tool_name": "web_search",
-                "agent": "research",
-                "status": "SUCCESS",
-                "latency_ms": search_res.latency_ms,
-                "mode": search_res.mode,
-            })
-            for item in search_res.data.get("results", []):
-                if item.get("url"):
-                    sources.append(item["url"])
-
-        # 3. Invoke Search MCP: search_news
-        news_res = MCPClient.call_tool(
-            agent_name="research",
-            tool_name="search_news",
-            arguments={"query": destination, "limit": 2},
-            is_demo=is_demo,
-        )
-        if news_res.success and news_res.data:
-            tool_calls.append({
-                "tool_name": "search_news",
-                "agent": "research",
-                "status": "SUCCESS",
-                "latency_ms": news_res.latency_ms,
-                "mode": news_res.mode,
-            })
+        for s in fresh_res.sources:
+            s_url = s.get("url") or s.get("title")
+            if s_url and s_url not in sources:
+                sources.append(s_url)
 
         dest_lower = destination.lower()
         if "tokyo" in dest_lower or "japan" in dest_lower:
@@ -251,7 +250,10 @@ def research_agent_node(state: TravelState) -> Dict[str, Any]:
             local_customs=customs,
             important_notes=notes,
             sources=sources,
-            demo_data=True,
+            fresh_findings=[f.model_dump() for f in fresh_res.findings],
+            conflicts=[c.model_dump() for c in fresh_res.conflicts],
+            official_verified=fresh_res.official_verified,
+            demo_data=is_demo,
         )
 
         prior_runs = state.get("agent_runs", [])
@@ -259,6 +261,7 @@ def research_agent_node(state: TravelState) -> Dict[str, Any]:
 
         return {
             "research_results": research_model.model_dump(),
+            "fresh_research": fresh_res.model_dump(),
             "planning_status": WorkflowStatus.PARTIAL_RESULTS.value if has_failure else WorkflowStatus.READY_FOR_VALIDATION.value,
             "tool_calls": tool_calls,
             "rag_retrievals": [rag_telemetry],

@@ -136,6 +136,11 @@ __all__ = [
     "RAGRetrievalResult",
     "sanitize_retrieved_content",
     "format_retrieved_context_defensively",
+    "SourceTrustCategory",
+    "classify_domain_trust",
+    "ResearchFinding",
+    "ConflictingClaim",
+    "FreshWebResearchResult",
 ]
 
 from models.rag import (
@@ -148,4 +153,12 @@ from models.rag import (
     RAGRetrievalResult,
     sanitize_retrieved_content,
     format_retrieved_context_defensively,
+)
+
+from models.research import (
+    SourceTrustCategory,
+    classify_domain_trust,
+    ResearchFinding,
+    ConflictingClaim,
+    FreshWebResearchResult,
 )

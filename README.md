@@ -305,7 +305,7 @@ The platform is developed in **18 distinct phases**:
 - [x] **Phase 7: Model Context Protocol (MCP) Integration** *(Completed)*
 - [x] **Phase 8: Real External APIs & Provider Integration** *(Completed)*
 - [x] **Phase 9: RAG Knowledge Base & Supabase pgvector** *(Completed)*
-- [ ] **Phase 10: Live Web Search Integration**
+- [x] **Phase 10: Web Search & Fresh Information Research** *(Completed)*
 - [ ] **Phase 11: Guardrails & Security Implementation**
 - [ ] **Phase 12: Dynamic Replanning Engine**
 - [ ] **Phase 13: Human-in-the-Loop (HITL) Gateways**
@@ -314,6 +314,101 @@ The platform is developed in **18 distinct phases**:
 - [ ] **Phase 16: Comprehensive Testing & Evaluation**
 - [ ] **Phase 17: Production UI Polish & Experience**
 - [ ] **Phase 18: Deployment & Interview Runbook**
+
+---
+
+## 🌐 Phase 10: Web Search & Fresh Information Research
+
+Phase 10 introduces a production-oriented, secure web research layer operating through the **Search MCP** boundary. It enables reasoning agents to retrieve fresh, time-sensitive intelligence that must **not** come from static RAG or structured operational APIs.
+
+### Grounding Source-Selection Matrix
+
+```
+                    USER REQUEST
+                         ↓
+                 INFORMATION TYPE
+                         ↓
+        ┌────────────────┼────────────────┐
+        ↓                ↓                ↓
+      RAG             MCP/API         WEB SEARCH
+        ↓                ↓                ↓
+ Stable Knowledge    Live Structured   Fresh Info
+        └────────────────┼────────────────┘
+                         ↓
+                      AGENTS
+                         ↓
+                     VALIDATOR
+```
+
+### Strict Separation of Knowledge Sources
+
+| Data Layer | Role & Scope | Typical Examples | Underlying Engine |
+| :--- | :--- | :--- | :--- |
+| **Curated RAG** | **Stable Knowledge** | Cultural customs, etiquette, monument history, general travel tips, transit norms | Supabase pgvector + HNSW |
+| **Operational MCP / APIs** | **Structured Live Data** | Flight schedules, room availability, live weather forecasts, currency conversions | Amadeus GDS, Open-Meteo, Frankfurter |
+| **Search MCP / Web Search** | **Fresh / Current Info** | Seasonal festivals, attraction closures, transport strikes, travel advisories, regional news | Tavily / Brave Search / Safe HTTP Fetcher |
+
+### Search MCP Architecture
+
+Agents interact **exclusively** with Search MCP tools—never directly calling search APIs:
+
+```
+Research Agent
+      ↓
+Search MCP
+      ↓
+Search Provider (Tavily / Brave / Safe Fetcher)
+      ↓
+Fresh Web Results
+      ↓
+Validation / Normalization / Security Sanitization
+      ↓
+Research Agent
+```
+
+#### MCP Tools Provided:
+1. `web_search(query, destination, recency, max_results, allowed_domains)`: Structured web query returning sanitized snippets, domain classifications, and publication timestamps.
+2. `search_news(query, destination, recency, limit)`: Specialized regional discovery for current events, transport disruptions, festivals, and advisories.
+3. `fetch_page(url, max_length)`: Sandboxed, SSRF-protected HTTP page retrieval extracting clean headings and text while stripping scripts, styles, tracking tags, and navigation wrappers.
+
+### Source Trust Classification
+
+All retrieved sources are classified into explicit trust categories:
+- **`OFFICIAL`**: Government portals, embassies, national tourism organizations (`.gov`, `travel.state.gov`, `japan.travel`, `metro.tokyo.jp`, `visitlondon.com`).
+- **`NEWS`**: Established news organizations (`bbc.com`, `reuters.com`, `japantimes.co.jp`, `lemonde.fr`).
+- **`REFERENCE`**: Curated travel encyclopedias (`wikipedia.org`, `wikivoyage.org`, `lonelyplanet.com`).
+- **`COMMUNITY`**: Forums and social travel communities (`reddit.com`, `tripadvisor.com`, `flyertalk.com`).
+- **`UNKNOWN`**: Unclassified external domains.
+
+### Authoritative Verification for Sensitive Requirements
+For critical legal and border requirements (visas, passport validity rules, immigration mandates, health certificates):
+- The system **strictly prefers `OFFICIAL` government and embassy sources**.
+- Random travel blogs are never used as sole authority for entry rules.
+- If authoritative official verification is missing, the system explicitly reports **verification as incomplete** rather than fabricating requirements.
+
+### Multi-Source Research & Conflict Handling
+When multiple sources report contradictory facts (e.g. market closure days, renovation timelines, festival dates):
+- The system **never silently chooses one source**.
+- A `ConflictingClaim` record is populated with `claim_a`, `claim_b`, `source_a`, `source_b`, timestamps, and an explicit uncertainty advisory.
+
+### Security Boundaries & Protections
+1. **SSRF & Private Network Defense**:
+   - Blocks loopback targets (`localhost`, `127.0.0.1`, `0.0.0.0`, `[::1]`).
+   - Blocks private RFC 1918 subnets (`10.x`, `192.168.x`, `172.16-31.x`).
+   - Blocks cloud metadata endpoints (`169.254.169.254`, `metadata.google.internal`).
+   - Restricts protocols to `http://` and `https://` (prohibiting `file://`, `ftp://`).
+2. **Prompt Injection Defense**:
+   - Retrieved web pages are strictly treated as **UNTRUSTED DATA** (`untrusted: True`).
+   - Pattern neutralizers scrub adversarial instruction overrides (`Ignore previous instructions`, `SYSTEM INSTRUCTIONS:`, `developer mode`).
+   - Content cannot alter LangGraph state machine flow, grant permissions, or invoke tools.
+3. **Resiliency & Performance**:
+   - **Caching**: 15-minute in-memory cache for repeated queries and fetched pages.
+   - **Rate Limiting**: Handles HTTP 429 with `Retry-After` header extraction and bounded exponential backoff.
+   - **Bounded Retries**: Maximum 2 retries on 5xx network errors; no infinite loops.
+   - **Size Limits**: Page downloads capped at 500KB with 5-second timeouts.
+4. **DEMO vs LIVE Mode**:
+   - `DEMO_MODE=true`: Deterministic, rich mock results marked `DEMO` with realistic dates and trust classifications.
+   - `DEMO_MODE=false`: Real Tavily or Brave Search queries; raises explicit `ProviderConfigurationError` if credentials are missing.
 
 ---
 

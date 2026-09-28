@@ -51,9 +51,14 @@ ALLOWED_SEARCH_DOMAINS: Set[str] = {
     "tripadvisor.com",
     "travel.state.gov",
     "japan.travel",
+    "metro.tokyo.jp",
     "parisjetaime.com",
     "visitlondon.com",
     "nycgo.com",
+    "gov.uk",
+    "bbc.com",
+    "reuters.com",
+    "japantimes.co.jp",
 }
 
 # Blocked SSRF and internal addresses
@@ -66,6 +71,14 @@ BLOCKED_IP_PATTERNS = [
     r"^192\.168\.",
     r"^172\.(1[6-9]|2[0-9]|3[0-1])\.",
     r"^metadata\.google\.internal$",
+    r"^::1$",
+    r"^\[::1\]$",
+    r"^fe80:",
+    r"^\[fe80:",
+    r"^fc00:",
+    r"^\[fc00:",
+    r"^fd",
+    r"^\[fd",
 ]
 
 
@@ -136,16 +149,86 @@ class MCPSecurityManager:
 
         # Neutralize common prompt injection patterns
         injection_patterns = [
-            r"(?i)ignore\s+(all\s+)?previous\s+instructions",
+            r"(?i)ignore\s+(all\s+)?(previous|prior|above)\s+instructions?",
+            r"(?i)system\s*instructions?\s*:\s*",
+            r"(?i)developer\s*instructions?\s*:\s*",
+            r"(?i)system\s*:\s*",
             r"(?i)system\s*prompt",
-            r"(?i)you\s+are\s+now\s+in\s+developer\s+mode",
+            r"(?i)you\s+are\s+now\s+(an?\s+)?developer\s+mode",
+            r"(?i)you\s+are\s+now\s+a\s+",
             r"(?i)override\s+security\s+rules",
+            r"(?i)grant\s+(all\s+)?(admin|root|superuser|permissions)",
+            r"(?i)bypass\s+validation",
         ]
         for pat in injection_patterns:
             sanitized = re.sub(pat, "[FILTERED_UNTRUSTED_INSTRUCTION]", sanitized)
 
+        # Collapse whitespace
+        sanitized = re.sub(r"\s+", " ", sanitized).strip()
+
         # Truncate to maximum characters
-        return sanitized.strip()[:max_chars]
+        return sanitized[:max_chars]
+
+    @classmethod
+    def extract_clean_web_content(cls, raw_html: str, max_chars: int = 3000) -> Dict[str, Any]:
+        """Extract title, headings, and readable body from raw HTML while discarding scripts, nav, and styling."""
+        if not raw_html:
+            return {"title": "Untitled", "headings": [], "content": ""}
+
+        # Extract title
+        title_match = re.search(r"<title[^>]*>(.*?)</title>", raw_html, flags=re.IGNORECASE | re.DOTALL)
+        title = title_match.group(1).strip() if title_match else "Web Page Content"
+        title = re.sub(r"<[^>]+>", "", title).strip()
+
+        # Extract headings (h1, h2)
+        headings = []
+        for h_match in re.finditer(r"<h[1-2][^>]*>(.*?)</h[1-2]>", raw_html, flags=re.IGNORECASE | re.DOTALL):
+            h_text = re.sub(r"<[^>]+>", "", h_match.group(1)).strip()
+            if h_text and h_text not in headings:
+                headings.append(h_text[:100])
+
+        # Remove intrusive block elements: script, style, nav, header, footer, aside, iframe, noscript
+        cleaned_html = re.sub(
+            r"<(script|style|nav|header|footer|aside|iframe|noscript|svg)[^>]*>.*?</\1>",
+            " ",
+            raw_html,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
+        # Extract paragraphs and content blocks
+        body = cls.sanitize_untrusted_content(cleaned_html, max_chars=max_chars)
+
+        return {
+            "title": title[:150],
+            "headings": headings[:6],
+            "content": body,
+        }
+
+    @classmethod
+    def validate_search_query(cls, query: str, max_length: int = 150) -> str:
+        """Validate and sanitize user/agent search queries, preventing query expansion attacks."""
+        if not query or not query.strip():
+            raise ValueError("Search query cannot be empty.")
+
+        q_clean = query.strip()
+        # Remove null bytes or invisible control chars
+        q_clean = re.sub(r"[\x00-\x1f\x7f]", " ", q_clean)
+        
+        # Neutralize prompt injection attempts in search queries
+        injection_triggers = [
+            r"(?i)ignore\s+(all\s+)?(previous|prior|above|system)\s+instructions?",
+            r"(?i)system\s*instructions?:?",
+            r"(?i)reveal\s+(secrets?|keys?|tokens?)",
+        ]
+        for it in injection_triggers:
+            q_clean = re.sub(it, " ", q_clean)
+
+        q_clean = re.sub(r"\s+", " ", q_clean).strip()
+
+        if len(q_clean) < 2:
+            raise ValueError("Search query must be at least 2 characters long.")
+
+        return q_clean[:max_length]
 
     @classmethod
     def sanitize_metadata(cls, data: Dict[str, Any]) -> Dict[str, Any]:

@@ -315,7 +315,10 @@ class SearchResultItem(BaseModel):
     url: str
     snippet: str
     source_domain: Optional[str] = None
+    source_type: str = Field(default="UNKNOWN", description="Source classification: OFFICIAL, NEWS, REFERENCE, COMMUNITY, UNKNOWN")
+    published_at: Optional[str] = None
     retrieved_at: Optional[str] = None
+    relevance_score: Optional[float] = None
     untrusted: bool = Field(default=True, description="Indicates third-party content requiring sanitization.")
     provider: str = "Mock Search Service"
     data_mode: str = "DEMO"
@@ -326,13 +329,19 @@ class WebSearchInput(BaseModel):
     """Parameters for external web retrieval."""
 
     query: str = Field(min_length=2, max_length=150, description="Search query string.")
+    destination: Optional[str] = Field(default=None, description="Optional target destination context.")
+    recency: Optional[str] = Field(default=None, description="Freshness window: today, 24h, 7d, 30d, all.")
+    language: str = Field(default="en", description="Target ISO language code.")
     max_results: int = Field(default=5, ge=1, le=10)
+    allowed_domains: Optional[List[str]] = Field(default=None, description="Optional domain filtering allowlist.")
 
 
 class WebSearchOutput(BaseModel):
     """Web search snippets."""
 
     query: str
+    destination: Optional[str] = None
+    recency: Optional[str] = None
     results: List[SearchResultItem] = Field(default_factory=list)
     provider: str = "Mock Search Service"
     data_mode: str = "DEMO"
@@ -344,6 +353,7 @@ class FetchPageInput(BaseModel):
     """Parameters for fetching single page content under strict URL sandboxing."""
 
     url: str = Field(description="Target web address. Must conform to HTTP/HTTPS protocol.")
+    max_length: int = Field(default=3000, ge=200, le=10000, description="Maximum characters extracted from page.")
 
     @field_validator("url")
     @classmethod
@@ -362,7 +372,12 @@ class FetchPageOutput(BaseModel):
 
     url: str
     title: str
+    headings: List[str] = Field(default_factory=list)
     content: str = Field(description="Sanitized web page text body.")
+    source_domain: Optional[str] = None
+    source_type: str = "UNKNOWN"
+    published_at: Optional[str] = None
+    retrieved_at: Optional[str] = None
     provider: str = "Mock Web Fetcher"
     data_mode: str = "DEMO"
     untrusted: bool = True
@@ -373,6 +388,8 @@ class SearchNewsInput(BaseModel):
     """Parameters for news and seasonal events discovery."""
 
     query: str = Field(min_length=2, max_length=100)
+    destination: Optional[str] = Field(default=None, description="Optional target destination.")
+    recency: Optional[str] = Field(default="7d", description="Freshness window: today, 24h, 7d, 30d.")
     limit: int = Field(default=3, ge=1, le=10)
 
 
@@ -380,9 +397,13 @@ class SearchNewsOutput(BaseModel):
     """Recent news headlines and events."""
 
     query: str
+    destination: Optional[str] = None
+    recency: Optional[str] = "7d"
     articles: List[Dict[str, Any]] = Field(default_factory=list)
     provider: str = "Mock News Service"
     data_mode: str = "DEMO"
+    untrusted: bool = True
+    demo_data: bool = True
     untrusted: bool = True
     demo_data: bool = True
 

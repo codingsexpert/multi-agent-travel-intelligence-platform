@@ -407,20 +407,53 @@ This development plan breaks down the construction of the platform into **18 dis
 
 ---
 
-## Phase 10: Live Web Search Integration
-- **Objective**: Integrate web search to detect volatile real-time conditions (events, closures, strikes, seasonal anomalies).
-- **Implementation Tasks**:
-  1. Implement web search client `src/services/search_service.py` supporting Tavily / Brave Search API.
-  2. Build query formulation agent prompt that constructs temporal, surgical search queries.
-  3. Implement snippet cleaner: strips HTML, deduplicates, and limits token length.
-  4. Combine RAG static knowledge + Live search findings in Research Agent synthesis.
+## Phase 10: Web Search & Fresh Information Research *(Completed)*
+- **Objective**: Implement a production-oriented fresh web research layer through the existing Search MCP boundary, retrieving current facts (festivals, temporary attraction closures, transport strikes, travel advisories, and recent headlines) that must not come from static RAG.
+- **Completed Implementation**:
+  1. Extended Search MCP schemas in `models/mcp.py` and `models/research.py`:
+     - `WebSearchInput` & `WebSearchOutput`: added `destination`, `recency` (`today`, `24h`, `7d`, `30d`, `all`), `language`, `allowed_domains`.
+     - `SearchResultItem`: added `source_type`, `published_at`, `retrieved_at`, `relevance_score`, `untrusted=True`.
+     - `FetchPageInput` & `FetchPageOutput`: sandboxed HTML retrieval with `headings`, `source_domain`, `source_type`.
+     - `SearchNewsInput` & `SearchNewsOutput`: specialized regional discovery for current events and disruptions.
+     - `SourceTrustCategory` (`OFFICIAL`, `NEWS`, `REFERENCE`, `COMMUNITY`, `UNKNOWN`) and `classify_domain_trust()` classifier.
+     - `ResearchFinding`, `ConflictingClaim`, and `FreshWebResearchResult`.
+  2. Implemented Search MCP provider adapter in `mcp/providers/search_provider.py`:
+     - `web_search`: Queries Tavily AI Search, Brave Search, or keyless Wikipedia OpenSearch API in LIVE mode; deterministic rich mock in DEMO mode.
+     - `fetch_page`: Enforces SSRF defense, bounded timeout (5s), response size cap (< 500KB), and clean text extraction.
+     - `search_news`: Queries regional headlines, disruptions, and festivals with domain trust classification.
+     - Thread-safe TTL caching (`ProviderCache`) and HTTP 429 rate limit handling with `Retry-After`.
+     - Explicit `ProviderConfigurationError` raised when live credentials are required but missing.
+  3. Hardened security boundaries in `mcp/security.py`:
+     - Strict SSRF defense blocking loopback (`localhost`, `127.0.0.1`, `[::1]`), private subnets (`10.x`, `192.168.x`, `172.16-31.x`), IPv6 unique local (`fc00::`, `fe80::`), and cloud metadata (`169.254.169.254`, `metadata.google.internal`).
+     - Protocol validation: blocks `file://`, `ftp://`, and malformed URLs.
+     - Domain allowlist enforcement for targeted page fetches.
+     - Prompt injection defense: all retrieved content tagged `untrusted: True`; regex neutralizers defang instruction overrides.
+     - Bounded HTML text extraction: strips `<script>`, `<style>`, `<nav>`, `<header>`, `<footer>`, `<aside>`, and tracking tags.
+  4. Built research orchestration layer in `services/research_service.py`:
+     - `InformationRouter`: Deterministic routing separating Curated RAG, Operational MCP APIs, and Fresh Web Search.
+     - `ResearchService`: Orchestrates `search_news` -> `web_search` -> `fetch_page` on official portals.
+     - Authoritative verification: Requires `OFFICIAL` sources for visa and entry mandates, warning if incomplete.
+     - Conflict detection: Captures `ConflictingClaim` records when independent sources report contradictory facts.
+  5. Integrated with Research Agent (`agents/research_agent.py`):
+     - Merges curated RAG cultural intelligence with fresh web search findings.
+     - Populates `DestinationResearch` with `fresh_findings`, `conflicts`, and `official_verified`.
+     - Returns `fresh_research` in state delta and records tool calls for telemetry.
+  6. Updated Streamlit Travel Command Center:
+     - `app/pages/sources.py`: Interactive Fresh Web Research sandbox with recency filters, source trust badges, conflict alerts, and source-selection diagram.
+     - `app/pages/agent_trace.py`: Live Search MCP execution telemetry.
+  7. Built comprehensive test suite in `tests/test_search.py`:
+     - 30 unit and integration tests covering all specified requirements.
 - **Files / Components**:
-  - `src/services/search_service.py`, `src/agents/research_agent.py`
+  - `models/research.py`, `models/mcp.py`, `models/__init__.py`, `models/specialized_options.py`
+  - `mcp/security.py`, `mcp/providers/search_provider.py`, `mcp/tools/search_tools.py`
+  - `services/research_service.py`, `agents/research_agent.py`, `graph/state.py`
+  - `app/pages/sources.py`, `app/pages/agent_trace.py`
   - `tests/test_search.py`
 - **Testing Requirements**:
-  - Verify query synthesis and clean markdown extraction from search results.
+  - 195/195 tests passing across entire repo (`pytest -v`).
+  - Verified schemas, recency, source classification, SSRF protection, prompt injection defense, conflict detection, DEMO/LIVE mode, and routing.
 - **Expected Output**:
-  - Up-to-the-minute real-world travel context integrated into trip planning.
+  - Secure, production-oriented fresh web research layer delivering grounded, time-sensitive travel intelligence.
 
 ---
 

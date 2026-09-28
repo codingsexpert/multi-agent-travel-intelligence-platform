@@ -1,31 +1,177 @@
-"""Sources, citations, and ground-truth RAG knowledge retrieval page."""
+"""Sources, citations, and ground-truth RAG & Fresh Web Research page."""
 
+from datetime import datetime, timezone
 import streamlit as st
 from models.rag import RAGRetrievalQuery, SourceTrustLevel
 from rag.retriever import travel_knowledge_retriever
+from services.research_service import research_service, InformationRouter
+from models.research import SourceTrustCategory
 
 
 def render_sources_page() -> None:
-    """Render curated travel knowledge base, vector retrieval sandbox, and citations."""
-    st.title("Travel Knowledge & RAG Retrieval")
+    """Render curated travel knowledge base, vector retrieval sandbox, fresh web research, and citations."""
+    st.title("Travel Intelligence: RAG & Fresh Web Research")
     st.markdown(
-        "Grounding travel intelligence powered by **Supabase pgvector**, curated destination knowledge bases, and multi-agent retrieval."
+        "Dual-engine grounding: **Curated RAG** (Supabase pgvector) for cultural etiquette and stable heritage, "
+        "paired with **Search MCP** for fresh events, temporary closures, and official advisories."
     )
 
-    tab_kb, tab_research, tab_arch = st.tabs([
-        "📚 Knowledge Base & Sandbox",
-        "🏛️ Destination Research (Active Trip)",
-        "🛡️ RAG Architecture & Guardrails",
+    tab_fresh, tab_kb, tab_trip, tab_arch = st.tabs([
+        "🌐 Fresh Web Research (Search MCP)",
+        "📚 Curated Knowledge Base (RAG)",
+        "🏛️ Active Trip Intelligence",
+        "🛡️ Routing & Trust Architecture",
     ])
+
+    with tab_fresh:
+        render_fresh_research_sandbox()
 
     with tab_kb:
         render_knowledge_sandbox()
 
-    with tab_research:
+    with tab_trip:
         render_active_trip_research()
 
     with tab_arch:
         render_rag_architecture_guide()
+
+
+def render_fresh_research_sandbox() -> None:
+    """Render interactive web search and fresh information research interface."""
+    st.markdown("### 🌐 Fresh Web Research & Verification Engine")
+    st.caption(
+        "Retrieve time-sensitive information (festivals, temporary attraction closures, flight disruptions, "
+        "and official border advisories) via the Search MCP boundary."
+    )
+
+    # Search Configuration
+    c_q1, c_q2 = st.columns([3, 1])
+    with c_q1:
+        fresh_query = st.text_input(
+            "Natural Language Research Query",
+            value="Tokyo festivals and cultural events autumn 2026",
+            placeholder="e.g. Tokyo festivals autumn 2026 or Paris metro strike disruptions",
+            key="fresh_sandbox_query",
+        )
+    with c_q2:
+        fresh_dest = st.text_input(
+            "Destination Focus",
+            value="Tokyo",
+            placeholder="e.g. Tokyo, Paris, London",
+            key="fresh_sandbox_dest",
+        )
+
+    f1, f2, f3 = st.columns(3)
+    with f1:
+        recency = st.selectbox(
+            "Freshness Window",
+            options=["today", "24h", "7d", "30d", "all"],
+            index=2,
+            key="fresh_sandbox_recency",
+        )
+    with f2:
+        is_demo_mode = st.toggle("DEMO Mode (Deterministic Sandbox)", value=True, key="fresh_sandbox_demo")
+    with f3:
+        st.markdown(
+            f"""
+            <div style="margin-top: 24px;">
+                <span style="background: {'#F57F17' if is_demo_mode else '#2E7D32'}; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 0.85rem;">
+                    {'🟡 DEMO MODE' if is_demo_mode else '🟢 LIVE PROVIDER'}
+                </span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    if st.button("🔎 Execute Fresh Web Research", type="primary", key="fresh_run_search"):
+        with st.spinner("Executing Search MCP workflow (search_news -> web_search -> fetch_page -> verification)..."):
+            research_out = research_service.execute_fresh_research(
+                destination=fresh_dest,
+                query_context=fresh_query,
+                is_demo=is_demo_mode,
+            )
+
+        # Telemetry & Status Summary
+        st.markdown("---")
+        t1, t2, t3, t4 = st.columns(4)
+        with t1:
+            st.metric("Total Findings", len(research_out.findings))
+        with t2:
+            st.metric("Sources Evaluated", len(research_out.sources))
+        with t3:
+            auth_badge = "✅ VERIFIED" if research_out.official_verified else "⚠️ INCOMPLETE"
+            st.metric("Official Verification", auth_badge)
+        with t4:
+            st.metric("Data Mode", research_out.data_mode)
+
+        # Warnings / Discrepancies
+        if research_out.warnings:
+            for w in research_out.warnings:
+                st.warning(f"⚠️ {w}")
+
+        # Conflicting Claims Panel
+        if research_out.conflicts:
+            st.markdown("#### ⚡ Conflicting Claims & Source Disagreements")
+            for c in research_out.conflicts:
+                with st.expander(f"⚠️ Discrepancy: {c.topic}", expanded=True):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown(f"**Claim A:** {c.claim_a}")
+                        st.caption(f"Source: `{c.source_a}` | Date: `{c.date_a or 'N/A'}`")
+                    with c2:
+                        st.markdown(f"**Claim B:** {c.claim_b}")
+                        st.caption(f"Source: `{c.source_b}` | Date: `{c.date_b or 'N/A'}`")
+                    st.info(f"💡 **Uncertainty Guidance:** {c.uncertainty_note}")
+
+        # Findings List
+        st.markdown("#### 📋 Extracted Evidence & Findings")
+        for idx, f in enumerate(research_out.findings, 1):
+            is_auth = f.is_authoritative
+            cat_color = "#2E7D32" if is_auth else "#1565C0"
+            conf_pct = int(f.confidence * 100)
+
+            with st.expander(f"{idx}. [{f.category.upper()}] {f.claim[:90]}... (Confidence: {conf_pct}%)", expanded=(idx <= 2)):
+                st.markdown(
+                    f"""
+                    <div style="display: flex; gap: 10px; margin-bottom: 8px;">
+                        <span style="background: {cat_color}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold;">
+                            {'OFFICIAL AUTHORITY' if is_auth else 'GENERAL SOURCE'}
+                        </span>
+                        <span style="background: rgba(128,128,128,0.2); padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">
+                            Category: <strong>{f.category}</strong>
+                        </span>
+                        <span style="background: rgba(128,128,128,0.2); padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">
+                            Published: <strong>{f.published_at or 'Recent'}</strong>
+                        </span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                st.write(f.claim)
+                st.caption(f"Attributed Sources: {', '.join(f.sources)} | Retrieved: {f.retrieved_at}")
+
+        # Sources Table
+        st.markdown("#### 📑 Evaluated Web Sources & Trust Classifications")
+        src_rows = []
+        for s in research_out.sources:
+            stype = s.get("source_type", "UNKNOWN")
+            trust_icon = {
+                "OFFICIAL": "🏛️ OFFICIAL",
+                "NEWS": "📰 NEWS",
+                "REFERENCE": "📚 REFERENCE",
+                "COMMUNITY": "💬 COMMUNITY",
+                "UNKNOWN": "❓ UNKNOWN",
+            }.get(stype, stype)
+
+            src_rows.append({
+                "Source Title": s.get("title", "Web Page"),
+                "Domain": s.get("domain", "web"),
+                "Trust Level": trust_icon,
+                "Published Date": s.get("published_at") or "Recent",
+                "Retrieved Time": s.get("retrieved_at") or "Just now",
+                "URL": s.get("url") or "--",
+            })
+        st.table(src_rows)
 
 
 def render_knowledge_sandbox() -> None:
@@ -113,7 +259,7 @@ def render_knowledge_sandbox() -> None:
                         unsafe_allow_html=True,
                     )
 
-                    st.markdown(f"**Cleaned Context Content:**")
+                    st.markdown("**Cleaned Context Content:**")
                     st.info(chunk.content)
 
                     st.markdown(f"**Verified Citation:** `{chunk.citation_str}`")
@@ -139,6 +285,29 @@ def render_active_trip_research() -> None:
     if rag_retrievals:
         total_retrieved = sum(r.get("chunks_retrieved", 0) for r in rag_retrievals)
         st.caption(f"⚡ Grounded with **{total_retrieved} verified knowledge chunks** retrieved via Supabase pgvector.")
+
+    # Fresh Findings Section (Phase 10)
+    fresh_findings = research.get("fresh_findings", [])
+    if fresh_findings:
+        st.markdown("### 🌐 Fresh Web & News Intelligence (Phase 10)")
+        auth_status = "✅ Official Government Verification Confirmed" if research.get("official_verified") else "ℹ️ Standard Web Coverage"
+        st.caption(f"Live status: **{auth_status}**")
+
+        for f in fresh_findings[:4]:
+            cat = f.get("category", "general")
+            st.info(f"**[{cat.upper()}]** {f.get('claim')}")
+
+    # Conflicts Section (Phase 10)
+    conflicts = research.get("conflicts", [])
+    if conflicts:
+        st.markdown("### ⚠️ Source Disagreements & Uncertainty Flags")
+        for c in conflicts:
+            st.warning(
+                f"**{c.get('topic')}:**\n"
+                f"- *{c.get('source_a')}:* {c.get('claim_a')}\n"
+                f"- *{c.get('source_b')}:* {c.get('claim_b')}\n"
+                f"💡 {c.get('uncertainty_note')}"
+            )
 
     st.markdown("### Destination Overview")
     st.write(research.get("destination_overview", "Overview unavailable."))
@@ -169,71 +338,72 @@ def render_active_trip_research() -> None:
 
 
 def render_rag_architecture_guide() -> None:
-    """Render RAG taxonomy, prompt injection defenses, and architectural roles."""
-    st.markdown("### Information Retrieval Strategy Matrix")
+    """Render RAG vs Web Search taxonomy, source-selection diagram, and security boundaries."""
+    st.markdown("### Source-Selection Matrix & Information Routing")
+    st.caption("How the platform deterministically dispatches user queries to the optimal knowledge and operational layers.")
 
     st.code(
         """
-                USER QUERY
-                     ↓
-                  AGENT
-                     ↓
-              RAG RETRIEVER
-                     ↓
-             Supabase pgvector
-                     ↓
-          Semantic + Metadata Filter
-                     ↓
-             Relevant Chunks
-                     ↓
-                   AGENT
+                    USER REQUEST
+                         ↓
+                 INFORMATION TYPE
+                         ↓
+        ┌────────────────┼────────────────┐
+        ↓                ↓                ↓
+      RAG             MCP/API         WEB SEARCH
+        ↓                ↓                ↓
+ Stable Knowledge    Live Structured   Fresh Info
+        └────────────────┼────────────────┘
+                         ↓
+                      AGENTS
+                         ↓
+                     VALIDATOR
         """,
         language="text",
     )
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown("#### 📚 RAG Knowledge")
+        st.markdown("#### 📚 Curated RAG")
         st.markdown(
             """
             - **Scope**: Stable, curated travel knowledge.
-            - **Contents**: Local customs, cultural etiquette, attraction history, transit rules, neighborhood guides.
-            - **Latency**: Very Fast (5-20ms).
-            - **Engine**: Supabase pgvector + HNSW index.
-            - **Update Frequency**: Editorial releases, vetted monthly.
+            - **Contents**: Etiquette, cultural customs, heritage monuments, transit etiquette, local tipping norms.
+            - **Latency**: 5–25 ms.
+            - **Engine**: Supabase PostgreSQL + pgvector (HNSW index).
+            - **Updates**: Controlled editorial additions.
             """
         )
     with col2:
-        st.markdown("#### ⚡ MCP / Provider APIs")
+        st.markdown("#### ⚡ MCP Operational APIs")
         st.markdown(
             """
-            - **Scope**: Structured live operational data.
-            - **Contents**: Flight availability, seat inventory, hotel nightly rates, real-time weather forecasts, FX rates.
-            - **Latency**: 100-800ms.
-            - **Engine**: Amadeus GDS, Open-Meteo, Frankfurter ECB.
-            - **Update Frequency**: Live queries on demand.
+            - **Scope**: Structured live operational facts.
+            - **Contents**: Flights, hotel room rates, weather forecasts, live foreign exchange conversion.
+            - **Latency**: 100–800 ms.
+            - **Engine**: Amadeus GDS, Open-Meteo, Frankfurter FX.
+            - **Updates**: Real-time operational queries.
             """
         )
     with col3:
-        st.markdown("#### 🌐 Web Search (Phase 10)")
+        st.markdown("#### 🌐 Fresh Web Search")
         st.markdown(
             """
-            - **Scope**: Fresh, dynamic, breaking information.
-            - **Contents**: Travel advisories, transport strikes, local events, seasonal festivals, emergency bulletins.
-            - **Latency**: 400-1200ms.
-            - **Engine**: Tavily / Brave Search API.
-            - **Update Frequency**: Real-time web index.
+            - **Scope**: Volatile, time-sensitive intelligence.
+            - **Contents**: Seasonal festivals, temporary closures, transport strikes, recent headlines, official visa updates.
+            - **Latency**: 400–1200 ms.
+            - **Engine**: Search MCP (Tavily / Brave / sandboxed fetch).
+            - **Updates**: Fresh web crawl index.
             """
         )
 
     st.markdown("---")
-    st.markdown("### 🛡️ Prompt Injection & Untrusted Data Defense")
+    st.markdown("### 🛡️ Security Protections & Untrusted Data Boundaries")
     st.markdown(
         """
-        Retrieved documents are treated strictly as **UNTRUSTED DATA**. Under no circumstances can retrieved knowledge:
-        1. Alter LangGraph agent routing or workflow states.
-        2. Override system or developer prompt instructions.
-        3. Grant tool invocation permissions or bypass validation constraints.
-        4. Fabricate external URLs or citations.
+        1. **SSRF & Private Network Defense**: The Search MCP strictly blocks `localhost`, `127.0.0.1`, RFC 1918 private subnets (`10.x`, `192.168.x`, `172.16.x`), IPv6 loopbacks, and `file://` schemes.
+        2. **Prompt Injection Defense**: All fetched web text and search snippets are tagged `untrusted: True`. Untrusted web content cannot alter LangGraph agent states, override system prompts, or invoke privileged tools.
+        3. **Bounded Extraction**: HTML downloads are capped at 500KB with 5-second timeouts, stripping scripts, styles, tracking tags, and navigation wrappers.
+        4. **Authoritative Verification**: Visa and border entry claims require `OFFICIAL` government or embassy sources. Unverified claims are flagged as incomplete.
         """
     )

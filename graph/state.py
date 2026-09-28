@@ -68,6 +68,7 @@ class TravelState(TypedDict, total=False):
     activities: List[Dict[str, Any]]
     weather: Optional[Dict[str, Any]]
     research_results: Optional[Dict[str, Any]]
+    fresh_research: Optional[Dict[str, Any]]
     budget_breakdown: Optional[Dict[str, Any]]
     itinerary: Optional[Dict[str, Any]]
     validation_results: Optional[Dict[str, Any]]
@@ -124,6 +125,7 @@ def create_initial_state(
         activities=[],
         weather=None,
         research_results=None,
+        fresh_research=None,
         budget_breakdown=None,
         itinerary=None,
         validation_results=None,

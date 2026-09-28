@@ -80,4 +80,7 @@ class DestinationResearch(BaseModel):
     local_customs: List[str] = Field(default_factory=list, description="Traditional manners and social practices")
     important_notes: List[str] = Field(default_factory=list, description="Essential advisories (visas, cash vs card)")
     sources: List[str] = Field(default_factory=list, description="Source attributions")
+    fresh_findings: List[Dict[str, Any]] = Field(default_factory=list, description="Fresh research findings from web search")
+    conflicts: List[Dict[str, Any]] = Field(default_factory=list, description="Source discrepancies or conflicting claims")
+    official_verified: bool = Field(default=False, description="True if official government/authority sources verified requirements")
     demo_data: bool = Field(default=True, description="Strict marker indicating synthetic demo data")

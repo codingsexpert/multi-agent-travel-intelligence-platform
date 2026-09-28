@@ -35,9 +35,9 @@ PLANNED_AGENTS = [
     },
     {
         "name": "Research Agent",
-        "role": "Synthesizes destination etiquette, tips, and customs into shared state.",
-        "phase": "Phase 5 (Active)",
-        "model": "Mock Knowledge Graph [DEMO]",
+        "role": "Synthesizes curated RAG knowledge with fresh Web Search, news, and official advisories via Search MCP.",
+        "phase": "Phase 10 (Active)",
+        "model": "Search MCP + Supabase pgvector",
     },
     {
         "name": "Budget Engine",
