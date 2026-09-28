@@ -112,29 +112,106 @@ graph TD
 
 ```
 travel-intelligence-platform/
-├── .github/                      # GitHub workflows and CI/CD pipelines
-├── .env.example                  # Safe configuration template (zero secrets)
-├── .gitignore                    # Comprehensive secrets & artifact exclusion rules
+├── app/                          # Streamlit web application entrypoints
+│   ├── __init__.py
+│   └── main.py                   # Minimal foundation status & validation dashboard
+├── config/                       # Centralized settings & environment loading
+│   ├── __init__.py
+│   └── settings.py               # Pydantic Settings with DEMO_MODE defaults
+├── models/                       # Pydantic v2 domain schemas & data validation
+│   ├── __init__.py
+│   └── travel_request.py         # TravelRequest, TravelerPreferences, Constraints
+├── services/                     # Backend services & integration abstractions
+│   ├── __init__.py
+│   ├── health_service.py         # Non-blocking health & configuration verification
+│   └── supabase_service.py       # Supabase client wrapper with DEMO_MODE fallback
+├── utils/                        # Logging & error handling foundations
+│   ├── __init__.py
+│   ├── exceptions.py             # Structured application exception hierarchy
+│   └── logger.py                 # Structured logger with secret scrubbing filter
+├── agents/                       # Specialized travel domain agents (Phases 4 & 5)
+├── graph/                        # LangGraph orchestration state machine (Phase 4)
+├── repositories/                 # Data access layer (Phase 3)
+├── guardrails/                   # Input, tool & output safety guardrails (Phase 11)
+├── mcp/                          # Model Context Protocol servers & clients (Phase 7)
+├── rag/                          # pgvector RAG domain knowledge base (Phase 9)
+├── evaluation/                   # Automated evaluation & benchmark datasets (Phase 16)
+├── tests/                        # Comprehensive test suite (pytest)
+│   ├── test_config.py            # Environment & settings loading tests
+│   ├── test_health.py            # Health status & component checks
+│   ├── test_logger_exceptions.py # Secret scrubbing & exception hierarchy tests
+│   ├── test_models.py            # Pydantic travel schema validation tests
+│   └── test_supabase.py          # Supabase service & DEMO_MODE fallback tests
+├── requirements.txt              # Pinned, lightweight core dependencies
+├── .env.example                  # Environment configuration template (zero secrets)
+├── .gitignore                    # Version control exclusion rules
 ├── README.md                     # Project overview & architectural guide
 ├── PROJECT_SPEC.md               # Complete functional & technical specifications
 ├── ARCHITECTURE.md               # Detailed architectural deep-dive & schemas
 ├── ARCHITECTURE_DECISIONS.md     # Architectural Decision Records (ADRs)
-├── DEVELOPMENT_PLAN.md           # 18-phase implementation roadmap
-├── supabase/                     # Database migrations & RLS policies
-│   └── migrations/
-├── src/                          # Application source code (Phases 1-17)
-│   ├── core/                     # Configuration, logging, telemetry & caching
-│   ├── schemas/                  # Pydantic data models & state contracts
-│   ├── graph/                    # LangGraph workflow, nodes, and state machine
-│   ├── agents/                   # The 9 domain agents & LLM prompts
-│   ├── engines/                  # Deterministic Python budget & validator engines
-│   ├── services/                 # Supabase, MCP, RAG, Web Search, & Travel APIs
-│   ├── guardrails/               # Input, tool, and output security filters
-│   ├── mcp_servers/              # Local Model Context Protocol tool servers
-│   └── ui/                       # Streamlit multi-view frontend & custom styles
-├── tests/                        # Comprehensive test suite & evaluation datasets
-└── scripts/                      # Knowledge ingestion & operational runbooks
+└── DEVELOPMENT_PLAN.md           # 18-phase implementation roadmap
 ```
+
+---
+
+## 🚀 Quick Start & Local Development Guide
+
+### 1. Prerequisites
+- Python 3.11 or higher (Python 3.13 tested)
+- Git
+
+### 2. Create Virtual Environment
+```bash
+# Clone or navigate to the repository directory
+cd travel-intelligence-platform
+
+# Create Python virtual environment
+python3 -m venv .venv
+
+# Activate the virtual environment
+# On macOS / Linux:
+source .venv/bin/activate
+# On Windows:
+# .venv\Scripts\activate
+```
+
+### 3. Install Dependencies
+```bash
+# Install pinned dependencies
+pip install -r requirements.txt
+```
+
+### 4. Configure Environment Variables
+```bash
+# Copy the template to create your local .env
+cp .env.example .env
+
+# By default, DEMO_MODE=true is configured.
+# You do NOT need any API keys or credentials to run the platform locally!
+```
+
+### 5. Run the Streamlit Application
+```bash
+# Launch Streamlit in DEMO_MODE
+streamlit run app/main.py
+```
+Open your browser at `http://localhost:8501`. You will see the system health dashboard and the interactive TravelRequest validation sandbox.
+
+### 6. Run the Test Suite
+```bash
+# Run all unit tests with verbose reporting
+pytest -v
+```
+
+---
+
+## 💡 How `DEMO_MODE` Works
+
+`DEMO_MODE` enables 100% offline, interview-ready evaluation without requiring live API keys, paid accounts, or Docker containers:
+1. **Zero External Dependencies**: The application starts immediately without OpenAI keys, Supabase credentials, or flight/hotel subscriptions.
+2. **Graceful Degradation**: Backend services (like `SupabaseService`) detect missing credentials, safely return `None` or in-memory mocks, and log informational notices rather than raising fatal errors.
+3. **Deterministic Testing**: All core models, validations, and graph routing mechanics can be validated through `pytest` and the Streamlit UI deterministically.
+4. **Instant Production Switching**: Setting `DEMO_MODE=false` in `.env` activates real credentials and live external integrations whenever you are ready.
 
 ---
 
@@ -143,7 +220,7 @@ travel-intelligence-platform/
 The platform is developed in **18 distinct phases**:
 
 - [x] **Phase 0: Project Blueprint** *(Completed)*
-- [ ] **Phase 1: Project Foundation & Configuration**
+- [x] **Phase 1: Project Foundation & Configuration** *(Completed)*
 - [ ] **Phase 2: Streamlit UI Foundation**
 - [ ] **Phase 3: Supabase Integration (PostgreSQL, Auth & RLS)**
 - [ ] **Phase 4: LangGraph Core Engine & Planner Agent**
