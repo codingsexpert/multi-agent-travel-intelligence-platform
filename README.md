@@ -112,9 +112,31 @@ graph TD
 
 ```
 travel-intelligence-platform/
-├── app/                          # Streamlit web application entrypoints
+├── app/                          # Streamlit Travel Command Center
 │   ├── __init__.py
-│   └── main.py                   # Minimal foundation status & validation dashboard
+│   ├── main.py                   # Main entrypoint & page router
+│   ├── state/                    # Session state management
+│   │   ├── __init__.py
+│   │   └── session.py            # Active trip & navigation state
+│   ├── components/               # Modular UI components
+│   │   ├── __init__.py
+│   │   ├── sidebar.py            # Navigation & environment indicators
+│   │   └── trip_summary_card.py  # Structured TravelRequest summary cards
+│   └── pages/                    # 13 dedicated command center views
+│       ├── __init__.py
+│       ├── dashboard.py          # Platform readiness & quick action
+│       ├── new_trip.py           # Pydantic-validated trip intake form
+│       ├── my_trips.py           # In-memory saved trips & history
+│       ├── conversation.py       # Conversational planning interface
+│       ├── itinerary.py          # Day-by-day activity slot layouts
+│       ├── flights.py            # Flight search & corridor analysis
+│       ├── hotels.py             # Accommodation & lodging alternatives
+│       ├── activities.py         # Experience curation & pacing
+│       ├── weather.py            # 14-day forecasts & hazard radar
+│       ├── budget.py             # Deterministic budget breakdown grid
+│       ├── sources.py            # Citations (RAG, Web, APIs)
+│       ├── agent_trace.py        # 9 agents execution telemetry
+│       └── settings.py           # Environment diagnostics & secrets mask
 ├── config/                       # Centralized settings & environment loading
 │   ├── __init__.py
 │   └── settings.py               # Pydantic Settings with DEMO_MODE defaults
@@ -141,7 +163,9 @@ travel-intelligence-platform/
 │   ├── test_health.py            # Health status & component checks
 │   ├── test_logger_exceptions.py # Secret scrubbing & exception hierarchy tests
 │   ├── test_models.py            # Pydantic travel schema validation tests
-│   └── test_supabase.py          # Supabase service & DEMO_MODE fallback tests
+│   ├── test_supabase.py          # Supabase service & DEMO_MODE fallback tests
+│   ├── test_ui_form.py           # Travel intake form validation tests
+│   └── test_ui_state.py          # Session state & navigation tests
 ├── requirements.txt              # Pinned, lightweight core dependencies
 ├── .env.example                  # Environment configuration template (zero secrets)
 ├── .gitignore                    # Version control exclusion rules
@@ -221,7 +245,7 @@ The platform is developed in **18 distinct phases**:
 
 - [x] **Phase 0: Project Blueprint** *(Completed)*
 - [x] **Phase 1: Project Foundation & Configuration** *(Completed)*
-- [ ] **Phase 2: Streamlit UI Foundation**
+- [x] **Phase 2: Streamlit UI Foundation** *(Completed)*
 - [ ] **Phase 3: Supabase Integration (PostgreSQL, Auth & RLS)**
 - [ ] **Phase 4: LangGraph Core Engine & Planner Agent**
 - [ ] **Phase 5: Specialized Mock Domain Agents**
