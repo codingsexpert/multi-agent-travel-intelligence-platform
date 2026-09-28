@@ -21,6 +21,20 @@ from models.specialized_options import (
     DestinationResearch,
 )
 
+from models.budget import (
+    BudgetItemCategory,
+    BudgetItem,
+    BudgetBreakdown,
+    BudgetStatus,
+    BudgetSummary,
+)
+
+from models.validation import (
+    ValidationSeverity,
+    ValidationIssue,
+    ValidationResult,
+)
+
 __all__ = [
     "TravelRequest",
     "TravelerPreferences",
@@ -34,4 +48,12 @@ __all__ = [
     "ActivityOption",
     "WeatherObservation",
     "DestinationResearch",
+    "BudgetItemCategory",
+    "BudgetItem",
+    "BudgetBreakdown",
+    "BudgetStatus",
+    "BudgetSummary",
+    "ValidationSeverity",
+    "ValidationIssue",
+    "ValidationResult",
 ]

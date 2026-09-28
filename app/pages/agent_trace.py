@@ -40,21 +40,21 @@ PLANNED_AGENTS = [
         "model": "Mock Knowledge Graph [DEMO]",
     },
     {
-        "name": "Budget Agent",
-        "role": "Calculates exact cost totals, category percentages, and flags budget overruns.",
-        "phase": "Phase 6",
-        "model": "Pure Python",
+        "name": "Budget Engine",
+        "role": "Calculates exact cost totals, category percentages, and flags budget overruns (zero LLM math).",
+        "phase": "Phase 6 (Active)",
+        "model": "Pure Python (DETERMINISTIC)",
     },
     {
-        "name": "Validator Agent",
-        "role": "Validates temporal feasibility, connection times, and fatigue indices.",
-        "phase": "Phase 6",
-        "model": "Pure Python",
+        "name": "Validator",
+        "role": "Validates temporal feasibility, connection times, budget caps, and logistics consistency.",
+        "phase": "Phase 6 (Active)",
+        "model": "Pure Python (DETERMINISTIC)",
     },
     {
         "name": "Itinerary Agent",
         "role": "Synthesizes approved flight, hotel, and activity options into a narrative plan.",
-        "phase": "Phase 6",
+        "phase": "Phase 7+",
         "model": "gpt-4o",
     },
 ]
@@ -64,7 +64,7 @@ def render_agent_trace_page() -> None:
     """Render multi-agent execution telemetry and active trace table."""
     st.title("Agent Execution Trace & Telemetry")
     st.markdown(
-        "Real-time visibility into the LangGraph state machine, individual agent reasoning, tool invocations, and execution latencies."
+        "Real-time visibility into the LangGraph state machine, individual agent reasoning, deterministic calculation engines, and execution latencies."
     )
 
     st.markdown("---")
@@ -84,7 +84,7 @@ def render_agent_trace_page() -> None:
     with m1:
         st.metric(label="Workflow Status", value=workflow_status)
     with m2:
-        st.metric(label="Total Executed Agents", value=str(total_runs))
+        st.metric(label="Total Invocations", value=str(total_runs))
     with m3:
         st.metric(label="Successful Steps", value=str(successful_runs))
     with m4:
@@ -101,18 +101,35 @@ def render_agent_trace_page() -> None:
     else:
         trace_data = []
         for run in agent_runs:
-            agent_name = run.get("agent_name", "Unknown").title()
+            raw_name = run.get("agent_name", "Unknown")
+            is_deterministic = "engine" in raw_name.lower() or run.get("engine_type") == "DETERMINISTIC"
+
+            if "budget" in raw_name.lower():
+                display_name = "Budget Engine"
+            elif "validator" in raw_name.lower():
+                display_name = "Validator"
+            elif "planner" in raw_name.lower():
+                display_name = "Planner Agent"
+            else:
+                display_name = f"{raw_name.replace('_', ' ').title()} Agent"
+
             status = run.get("status", "UNKNOWN")
             duration_ms = run.get("duration_ms", 0.0)
             duration_s = f"{duration_ms / 1000:.2f}s" if duration_ms >= 1000 else f"{duration_ms:.1f}ms"
-            mode = "DEMO" if run.get("is_demo", True) else "LIVE"
+
+            if is_deterministic:
+                mode_str = "DETERMINISTIC"
+            else:
+                mode_str = "DEMO" if run.get("is_demo", True) else "LIVE"
+
             step = run.get("step", 1)
 
             trace_data.append({
-                "Agent": f"{agent_name} Agent",
+                "Component": display_name,
+                "Type": "DETERMINISTIC" if is_deterministic else "REASONING",
                 "Status": status,
                 "Duration": duration_s,
-                "Mode": mode,
+                "Mode": mode_str,
                 "Step": step,
                 "Error": run.get("error") or "None",
             })
@@ -120,7 +137,7 @@ def render_agent_trace_page() -> None:
         st.table(trace_data)
 
     st.markdown("---")
-    st.markdown("### Multi-Agent Roster (9 Planned Agents)")
+    st.markdown("### System Architecture Roster (Phase 6)")
 
     for idx, agent in enumerate(PLANNED_AGENTS, 1):
         with st.container():

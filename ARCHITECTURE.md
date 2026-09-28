@@ -127,9 +127,9 @@ stateDiagram-v2
     OutputGuardrail --> [*]
 ```
 
-### 3.1 Phase 5 Multi-Agent Workflow Engine
+### 3.1 Multi-Agent & Deterministic Workflow Engine (Phases 5 & 6)
 
-Phase 5 extends the LangGraph state machine into a concurrent multi-agent architecture featuring 5 specialized domain agents:
+The LangGraph state machine orchestrates concurrent specialized domain agents followed by deterministic calculation and validation engines:
 
 ```mermaid
 graph TD
@@ -146,22 +146,41 @@ graph TD
     Hotel --> Research
     Activity --> Research
     Weather --> Research
-    Research --> END([END])
+    Research --> Budget[Budget Engine - DETERMINISTIC]
+    Budget --> Validator[Validator Engine - DETERMINISTIC]
+    Validator --> END([END])
 ```
 
 #### Core Components & Architectural Principles
 1. **Shared State Architecture (`TravelState`)**:
    - Specialized agents **never directly invoke one another**. All state transfer, findings, and metadata are mediated exclusively through the centralized `TravelState`.
-   - Distinct domain keys (`flight_options`, `hotel_options`, `activities`, `weather`, `research_results`) ensure zero concurrent write collisions during parallel fan-out.
+   - Distinct domain keys (`flight_options`, `hotel_options`, `activities`, `weather`, `research_results`, `budget_breakdown`, `validation_results`) ensure zero concurrent write collisions during parallel fan-out.
    - Shared diagnostic arrays (`agent_runs`, `warnings`, `errors`) utilize `Annotated[List[...], operator.add]` reducers for thread-safe state accumulation.
 2. **Parallel Fan-Out & Convergence**:
    - Once requirements are validated, LangGraph triggers `Flight`, `Hotel`, `Activity`, and `Weather` in parallel.
-   - All 4 branches converge into the `Research` node, which compiles destination cultural intelligence and evaluates overall status (`READY_FOR_VALIDATION` or `PARTIAL_RESULTS`).
-3. **Failure Isolation**:
-   - Every specialized agent is executed through `execute_agent_safely` in `agents/base_agent.py`.
-   - If an individual agent throws an exception (e.g. simulated weather sensor failure), the graph does **not** crash. The failure is recorded in `agent_runs`, a warning is added, and the workflow transitions to `PARTIAL_RESULTS` without fabricating data.
-4. **Strict `DEMO_DATA` Boundaries**:
-   - In Phase 5, all candidate deliverables are generated using deterministic mock engines and explicitly flagged with `demo_data: True` and clear source attribution (`[DEMO_DATA]`). Live API integrations arrive in Phases 7 & 8.
+   - All 4 branches converge into the `Research` node, which compiles destination cultural intelligence.
+   - The workflow then pipes sequentially into `BudgetEngine` and `ValidatorEngine`.
+3. **Deterministic Financial Calculation (Zero LLM Arithmetic)**:
+   - **Why LLMs are NOT used for math**: Probabilistic language models hallucinate arithmetic sums, round unpredictably, and fail financial precision constraints.
+   - All cost calculations (`flights + hotels + activities + food + transport + misc`) are executed in pure Python floating-point math in `BudgetEngine`.
+   - Supports **STRICT budget strategy**: if `total_estimated_cost > budget`, marks `within_budget = False`, computes exact currency variance, and flags `OVER_BUDGET`.
+4. **Deterministic Feasibility & Time-Conflict Validation**:
+   - **Why LLMs are NOT used for validation**: LLM-based constraint checking is nondeterministic, prone to sycophancy, and susceptible to prompt injection.
+   - `ValidatorEngine` applies deterministic Python rules:
+     - *Dates*: Enforces positive durations, valid ISO strings, and date ordering (`end_date >= start_date`). Supports flexible unpinned dates with non-fatal warnings.
+     - *Travelers*: Enforces positive integer headcounts (`travelers >= 1`).
+     - *Flights*: Rejects flights where departure is at or after arrival (`departure < arrival`).
+     - *Hotels*: Validates non-negative nightly rates and stay durations.
+     - *Activities*: Identifies duplicate activities and flags travel-time conflicts (`POSSIBLE_TIME_CONFLICT`) when flight arrivals buffer insufficiently with activity starts.
+     - *Weather*: Audits presence of meteorological feeds; flags `WEATHER_UNAVAILABLE` on agent failure without fabricating forecasts.
+5. **Validation Severity Hierarchy & Workflow Transitions**:
+   - `INFO`: Informational state notice (e.g. `DEMO_DATA_ACTIVE`).
+   - `WARNING`: Non-fatal advisory (e.g. `OVER_BUDGET`, `WEATHER_UNAVAILABLE`, `POSSIBLE_TIME_CONFLICT`, `CURRENCY_MISMATCH`). Workflow transitions to `READY_WITH_WARNINGS`.
+   - `ERROR`: Critical blocking invalidity (e.g. `INVALID_DATE_ORDER`, `INVALID_TRAVELER_COUNT`, `NEGATIVE_BUDGET`). Workflow transitions to `VALIDATION_FAILED`.
+   - When 0 errors and 0 warnings exist: transitions to `READY_FOR_ITINERARY`.
+6. **Failure Isolation & `DEMO_DATA` Boundaries**:
+   - All executions are wrapped with `execute_agent_safely` in `agents/base_agent.py`. Individual agent failures do not crash the pipeline.
+   - All mock deliverables explicitly carry `demo_data: True` and clear source attributions (`[DEMO_DATA]`). Live tool integrations (MCP) arrive in Phase 7.
 
 ### 3.2 Graph Structural Design
 - **Deterministic Routing**: Conditional edges check typed flags in the graph state rather than relying on LLM routing decisions for state transitions.

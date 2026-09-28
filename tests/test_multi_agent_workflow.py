@@ -18,7 +18,10 @@ def test_complete_multi_agent_workflow_execution():
     final_state = travel_graph.invoke(initial_state)
 
     # 1. Status verification
-    assert final_state["planning_status"] == WorkflowStatus.READY_FOR_VALIDATION.value
+    assert final_state["planning_status"] in [
+        WorkflowStatus.READY_FOR_ITINERARY.value,
+        WorkflowStatus.READY_WITH_WARNINGS.value,
+    ]
     assert final_state["clarification_required"] is False
 
     # 2. Parallel Deliverables verified
@@ -39,7 +42,7 @@ def test_complete_multi_agent_workflow_execution():
 
     # 3. Agent Runs Telemetry
     executed_agents = [r["agent_name"] for r in final_state["agent_runs"]]
-    for expected in ["planner", "flight", "hotel", "activity", "weather", "research"]:
+    for expected in ["planner", "flight", "hotel", "activity", "weather", "research", "budget_engine", "validator_engine"]:
         assert expected in executed_agents
 
     # Verify timing and status
@@ -49,7 +52,7 @@ def test_complete_multi_agent_workflow_execution():
 
 
 def test_partial_agent_failure_isolation():
-    """Verify that when a specialized agent fails, the workflow does not crash and exposes PARTIAL_RESULTS."""
+    """Verify that when a specialized agent fails, the workflow does not crash and exposes partial/warning results."""
     req_text = "Trip from SFO to Tokyo from 2026-11-01 to 2026-11-10 for 2 people with $5000 budget."
     initial_state = create_initial_state(
         original_request=req_text,
@@ -64,8 +67,11 @@ def test_partial_agent_failure_isolation():
     # Workflow must NOT crash
     assert final_state is not None
 
-    # Status must reflect partial results
-    assert final_state["planning_status"] == WorkflowStatus.PARTIAL_RESULTS.value
+    # Status must reflect partial results / ready with warnings
+    assert final_state["planning_status"] in [
+        WorkflowStatus.PARTIAL_RESULTS.value,
+        WorkflowStatus.READY_WITH_WARNINGS.value,
+    ]
 
     # Weather result must not be fabricated
     assert final_state.get("weather") is None

@@ -62,9 +62,72 @@ def render_itinerary_page() -> None:
 
     st.markdown("---")
 
+    # Validation Status Section (Phase 6)
+    travel_state = st.session_state.get("travel_state", {})
+    val_data = travel_state.get("validation_results")
+
+    st.subheader("Itinerary Feasibility & Constraint Validation")
+    if not val_data:
+        st.info("ℹ️ **Validation Pending**: Run Travel Planning to execute deterministic constraint verification.")
+    else:
+        v_status = val_data.get("status", "READY_FOR_ITINERARY")
+        is_valid = val_data.get("valid", True)
+        v_issues = val_data.get("issues", [])
+        v_warnings = val_data.get("warnings", [])
+        v_errors = val_data.get("errors", [])
+
+        if not is_valid:
+            st.error(f"❌ **Validation Failed** (Status: `{v_status}`). Fix critical blocking issues before generating itinerary.")
+        elif len(v_warnings) > 0:
+            st.warning(f"⚠️ **Validation Passed With Warnings** (Status: `{v_status}`). Review advisories below.")
+        else:
+            st.success(f"✅ **Itinerary Fully Verified** (Status: `{v_status}`). Zero constraint violations or time conflicts.")
+
+        # Checklists
+        has_budget_err = any(i.get("component") == "budget" and i.get("severity") == "ERROR" for i in v_issues)
+        has_budget_warn = any(i.get("component") == "budget" and i.get("severity") == "WARNING" for i in v_issues)
+        has_date_err = any(i.get("component") == "dates" for i in v_issues)
+        has_traveler_err = any(i.get("component") == "travelers" for i in v_issues)
+        has_weather_warn = any(i.get("component") == "weather" for i in v_issues)
+        has_act_conflict = any(i.get("component") == "activities" for i in v_issues)
+
+        b_label = "❌ Budget Error" if has_budget_err else ("⚠️ Budget Overrun" if has_budget_warn else "✓ Budget Within Cap")
+        d_label = "❌ Invalid Dates" if has_date_err else "✓ Valid Dates Sequence"
+        t_label = "❌ Invalid Travellers" if has_traveler_err else "✓ Positive Traveller Count"
+        w_label = "⚠️ Weather Unavailable" if has_weather_warn else "✓ Weather Observed"
+        a_label = "⚠️ Activity Schedule Conflict" if has_act_conflict else "✓ Activity Pacing Consistent"
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown(f"• **Budget Feasibility**: `{b_label}`")
+            st.markdown(f"• **Date Feasibility**: `{d_label}`")
+        with c2:
+            st.markdown(f"• **Traveller Headcount**: `{t_label}`")
+            st.markdown(f"• **Meteorological Feed**: `{w_label}`")
+        with c3:
+            st.markdown(f"• **Activity Schedule**: `{a_label}`")
+            mode_lbl = "DEMO DATA" if travel_state.get("is_demo", True) else "LIVE API"
+            st.markdown(f"• **Validation Engine**: `DETERMINISTIC ({mode_lbl})`")
+
+        if v_issues:
+            with st.expander(f"Detailed Validation Issues Log ({len(v_issues)} items)", expanded=not is_valid):
+                for iss in v_issues:
+                    sev = iss.get("severity", "INFO")
+                    comp = iss.get("component", "General").title()
+                    code = iss.get("code", "")
+                    msg = iss.get("message", "")
+                    if sev == "ERROR":
+                        st.markdown(f"❌ **[{sev}] [{comp} - {code}]**: {msg}")
+                    elif sev == "WARNING":
+                        st.markdown(f"⚠️ **[{sev}] [{comp} - {code}]**: {msg}")
+                    else:
+                        st.markdown(f"ℹ️ **[{sev}] [{comp} - {code}]**: {msg}")
+
+    st.markdown("---")
+
     # Placeholder banner
     st.info(
-        "ℹ️ **Empty Itinerary State**: The Itinerary Agent and Activity Agent will synthesize approved activities, verified transit times, and weather windows in Phase 5 & Phase 6. The slots below illustrate the target data structure."
+        "ℹ️ **Itinerary Synthesis Preview**: Final day-by-day itinerary synthesis will be assembled by the Itinerary Agent in Phase 7+. The verified slots below illustrate the target data structure."
     )
 
     # Day 1 Structure

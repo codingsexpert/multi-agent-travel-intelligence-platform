@@ -124,6 +124,9 @@ def run_travel_planning(
                 questions = final_state.get("clarification_questions", [])
                 assistant_text = "I need a few details before planning:\n\n" + "\n".join(questions)
             elif final_state.get("planning_status") in [
+                WorkflowStatus.READY_FOR_ITINERARY.value,
+                WorkflowStatus.READY_WITH_WARNINGS.value,
+                WorkflowStatus.VALIDATION_FAILED.value,
                 WorkflowStatus.READY_FOR_VALIDATION.value,
                 WorkflowStatus.SPECIALIZED_AGENTS_COMPLETED.value,
                 WorkflowStatus.PARTIAL_RESULTS.value,
@@ -142,22 +145,44 @@ def run_travel_planning(
                 has_weather = bool(final_state.get("weather"))
                 has_research = bool(final_state.get("research_results"))
 
-                status_label = (
-                    "✅ **Specialized Travel Analysis Complete**"
-                    if final_state.get("planning_status") != WorkflowStatus.PARTIAL_RESULTS.value
-                    else "⚠️ **Partial Travel Analysis Completed**"
+                budget_data = final_state.get("budget_breakdown") or {}
+                validation_data = final_state.get("validation_results") or {}
+
+                p_status = final_state.get("planning_status")
+                if p_status == WorkflowStatus.READY_FOR_ITINERARY.value:
+                    status_label = "✅ **Travel Analysis & Validation Verified**"
+                elif p_status == WorkflowStatus.READY_WITH_WARNINGS.value:
+                    status_label = "⚠️ **Travel Analysis Verified With Warnings**"
+                elif p_status == WorkflowStatus.VALIDATION_FAILED.value:
+                    status_label = "❌ **Itinerary Validation Failed**"
+                else:
+                    status_label = "ℹ️ **Specialized Travel Analysis Complete**"
+
+                estimated_cost_str = (
+                    f"{curr} {budget_data.get('total_estimated_cost', 0):,.2f} ({budget_data.get('utilization_percentage', 0)}% utilized)"
+                    if budget_data
+                    else "Calculated on demand"
+                )
+
+                val_issues_count = len(validation_data.get("issues", []))
+                val_summary_str = (
+                    f"{'Passed' if validation_data.get('valid') else 'Failed'} ({len(validation_data.get('errors', []))} error(s), {len(validation_data.get('warnings', []))} warning(s))"
+                    if validation_data
+                    else "Pending"
                 )
 
                 assistant_text = (
-                    f"{status_label} (Status: `{final_state.get('planning_status')}`)\n\n"
+                    f"{status_label} (Status: `{p_status}`)\n\n"
                     f"• **Route**: {orig} → {dest} ({dur or 'N/A'} days, {final_state.get('travelers') or 1} traveler(s))\n"
                     f"• **Budget Limit**: {budget_str}\n"
+                    f"• **Estimated Total**: {estimated_cost_str}\n"
+                    f"• **Validation Status**: {val_summary_str}\n"
                     f"• **Flights Discovered**: {flights_count} option(s) [DEMO_DATA]\n"
                     f"• **Accommodations Found**: {hotels_count} property option(s) [DEMO_DATA]\n"
                     f"• **Experiences Curated**: {activities_count} activities [DEMO_DATA]\n"
                     f"• **Climatological Context**: {'Available' if has_weather else 'Unavailable'}\n"
                     f"• **Destination Intelligence**: {'Compiled' if has_research else 'Unavailable'}\n\n"
-                    f"Visit the **Flights**, **Hotels**, **Activities**, **Weather**, and **Agent Trace** pages to inspect detailed agent deliverables."
+                    f"Visit the **Budget**, **Flights**, **Hotels**, **Activities**, **Weather**, and **Agent Trace** pages to inspect detailed deterministic calculations and validation reports."
                 )
             else:
                 assistant_text = f"Planning status: {final_state.get('planning_status')}."

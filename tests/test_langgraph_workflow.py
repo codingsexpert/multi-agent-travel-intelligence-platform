@@ -17,7 +17,10 @@ def test_langgraph_complete_workflow_execution():
 
     final_state = travel_graph.invoke(initial_state)
 
-    assert final_state["planning_status"] == WorkflowStatus.READY_FOR_VALIDATION.value
+    assert final_state["planning_status"] in [
+        WorkflowStatus.READY_FOR_ITINERARY.value,
+        WorkflowStatus.READY_WITH_WARNINGS.value,
+    ]
     assert final_state["clarification_required"] is False
     assert final_state["destination"] == "Japan"
     assert final_state["origin"] == "Delhi"

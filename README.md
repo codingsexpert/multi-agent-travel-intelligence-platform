@@ -166,7 +166,11 @@ travel-intelligence-platform/
 │   ├── exceptions.py             # Structured application exception hierarchy
 │   └── logger.py                 # Structured logger with secret scrubbing filter
 ├── agents/                       # Specialized travel domain agents (Phases 4 & 5)
-├── graph/                        # LangGraph orchestration state machine (Phase 4)
+├── engines/                      # Pure Python deterministic math & validator engines (Phase 6)
+│   ├── __init__.py
+│   ├── budget_engine.py          # Deterministic financial math & category breakdowns
+│   └── validator_engine.py       # Deterministic feasibility & time-conflict validation
+├── graph/                        # LangGraph orchestration state machine (Phases 4, 5 & 6)
 ├── guardrails/                   # Input, tool & output safety guardrails (Phase 11)
 ├── mcp/                          # Model Context Protocol servers & clients (Phase 7)
 ├── rag/                          # pgvector RAG domain knowledge base (Phase 9)
@@ -265,7 +269,7 @@ The platform is developed in **18 distinct phases**:
 - [x] **Phase 3: Supabase Integration (PostgreSQL, Auth & RLS)** *(Completed)*
 - [x] **Phase 4: LangGraph Core Engine & Planner Agent** *(Completed)*
 - [x] **Phase 5: Specialized Mock Domain Agents** *(Completed)*
-- [ ] **Phase 6: Budget Engine & Validator/Safety Agent (Pure Python)**
+- [x] **Phase 6: Budget Engine & Validator/Safety Agent (Pure Python)** *(Completed)*
 - [ ] **Phase 7: Model Context Protocol (MCP) Integration**
 - [ ] **Phase 8: Real External APIs Integration**
 - [ ] **Phase 9: RAG Knowledge Base & Supabase pgvector**

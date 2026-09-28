@@ -7,6 +7,8 @@ from agents.hotel_agent import hotel_agent_node
 from agents.activity_agent import activity_agent_node
 from agents.weather_agent import weather_agent_node
 from agents.research_agent import research_agent_node
+from agents.budget_agent import budget_agent_node
+from agents.validator_agent import validator_agent_node
 
 __all__ = [
     "planner_node",
@@ -16,6 +18,8 @@ __all__ = [
     "activity_agent_node",
     "weather_agent_node",
     "research_agent_node",
+    "budget_agent_node",
+    "validator_agent_node",
     "MAX_GRAPH_STEPS",
     "MAX_PLANNER_RETRIES",
 ]

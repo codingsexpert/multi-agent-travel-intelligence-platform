@@ -205,26 +205,48 @@ This development plan breaks down the construction of the platform into **18 dis
 
 ---
 
-## Phase 6: Budget Engine & Validator/Safety Agent (Pure Python)
-- **Objective**: Implement deterministic financial aggregation and constraint validation in pure Python, preventing LLM arithmetic errors.
+## Phase 6: Budget Engine & Validator/Safety Agent (Pure Python) (Completed)
+- **Objective**: Implement deterministic financial aggregation and constraint validation in pure Python, preventing LLM arithmetic errors and detecting inconsistent or infeasible travel plans.
 - **Implementation Tasks**:
-  1. Build `src/engines/budget_engine.py`:
-     - Calculates total trip cost (flights + hotels + activities + food allowance + contingency).
-     - Calculates category percentages and currency conversions.
-     - Detects budget overrun and flags violation magnitude.
-  2. Build `src/engines/validator_engine.py`:
-     - Temporal validation: Flight arrival < Hotel check-in; Activity intervals >= travel buffers.
-     - Pacing check: Flag daily schedules exceeding 10 active hours (fatigue index).
-     - Weather hazard check: Flag outdoor activities during forecasted storm days.
-  3. Add `BudgetNode` and `ValidationNode` to `src/graph/workflow.py`.
+  1. Built strongly typed Pydantic models in `models/budget.py` (`BudgetItemCategory`, `BudgetItem`, `BudgetBreakdown`, `BudgetStatus`, `BudgetSummary`) and `models/validation.py` (`ValidationSeverity`, `ValidationIssue`, `ValidationResult`).
+  2. Implemented pure Python `BudgetEngine` in `engines/budget_engine.py`:
+     - Calculates flights, hotels, activities, food allowances, local transit, and miscellaneous buffer.
+     - Deterministic arithmetic: `total_estimated_cost = flights + hotels + activities + food + transport + misc`.
+     - Strict budget mode: flags `OVER_BUDGET` when estimated > budget, calculating exact variance and utilization percentage.
+     - Currency handling: assumes normalized figures and detects currency mismatches across line items.
+  3. Implemented pure Python `ValidatorEngine` in `engines/validator_engine.py`:
+     - Budget validation: verifies positive caps, non-negative line items, and over-budget warnings.
+     - Dates validation: enforces start/end date presence, valid ISO parsing, non-inverted date sequences (`end_date >= start_date`), and flexible duration support.
+     - Traveller validation: enforces positive traveler headcount (`travelers >= 1`).
+     - Flight logistics: verifies flight departure strictly precedes arrival (`departure < arrival`).
+     - Lodging consistency: verifies check-in/check-out validity and non-negative nightly rates.
+     - Activity schedule: detects duplicate activity recommendations and evaluates travel-time buffer conflicts (`POSSIBLE_TIME_CONFLICT`).
+     - Climatological integrity: detects Weather Agent failures and flags `WEATHER_UNAVAILABLE` as a non-fatal warning without inventing data.
+  4. Integrated LangGraph workflow in `graph/workflow.py`:
+     - Added `budget_engine` node (`agents/budget_agent.py`) and `validator` node (`agents/validator_agent.py`).
+     - Connected convergence pipeline: `[flight, hotel, activity, weather] -> research -> budget_engine -> validator -> END`.
+     - Updated workflow terminal statuses: `READY_FOR_ITINERARY`, `READY_WITH_WARNINGS`, and `VALIDATION_FAILED`.
+  5. Updated Streamlit Command Center UI:
+     - `Budget` page (`app/pages/budget.py`): top metric KPIs, feasibility banner, 6-category breakdown grid, itemized financial audit table, and currency disclaimer.
+     - `Itinerary` page (`app/pages/itinerary.py`): deterministic feasibility & constraint audit checklist and detailed issues log.
+     - `New Trip` page (`app/pages/new_trip.py`): 8-component execution checklist and deterministic feasibility audit chips.
+     - `Agent Trace` page (`app/pages/agent_trace.py`): labels Budget Engine and Validator as `DETERMINISTIC` with live duration, status, and telemetry.
+  6. Added comprehensive unit and integration test suite:
+     - `tests/test_budget_engine.py`: 8 unit tests covering all budget feasibility scenarios.
+     - `tests/test_validator_engine.py`: 11 validator unit tests + 3 LangGraph end-to-end integration tests.
 - **Files / Components**:
-  - `src/engines/budget_engine.py`, `src/engines/validator_engine.py`
-  - `src/graph/nodes/budget_node.py`, `src/graph/nodes/validator_node.py`
-  - `tests/test_engines.py`
+  - `models/budget.py`, `models/validation.py`, `models/__init__.py`
+  - `engines/budget_engine.py`, `engines/validator_engine.py`, `engines/__init__.py`
+  - `agents/budget_agent.py`, `agents/validator_agent.py`, `agents/base_agent.py`, `agents/__init__.py`
+  - `graph/state.py`, `graph/workflow.py`
+  - `services/planning_service.py`
+  - `app/pages/budget.py`, `app/pages/itinerary.py`, `app/pages/new_trip.py`, `app/pages/agent_trace.py`
+  - `tests/test_budget_engine.py`, `tests/test_validator_engine.py`
 - **Testing Requirements**:
-  - Unit tests with edge cases (leap days, midnight flight arrivals, negative numbers, extreme budget overruns).
+  - 93 unit and integration tests passing (`pytest -v`).
+  - Verified exact math, budget overage detection, time conflict detection, partial agent degradation, and Streamlit execution.
 - **Expected Output**:
-  - Verified math and feasibility enforcement with zero hallucination risk.
+  - Exact financial arithmetic and constraint validation with zero LLM math or hallucination risk.
 
 ---
 

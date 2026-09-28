@@ -228,4 +228,35 @@ In Phase 5, the workflow expands from a single reasoning node into 5 specialized
 3. **Failure Isolation**: Each agent executes wrapped in `execute_agent_safely`. If an individual agent encounters a network/sensor failure, the exception is caught, logged, recorded as `FAILED` in `agent_runs`, and appended to `warnings`. The workflow transitions to `PARTIAL_RESULTS` rather than aborting.
 4. **Deterministic Mock Catalog (`DEMO_DATA`)**: All candidate options are generated deterministically and explicitly marked with `demo_data: True` and mock catalog sources. No fake live availability is reported.
 
+---
+
+## ADR-13: Pure Python Budget Engine & Deterministic Itinerary Validator
+
+### Context
+Travel budgeting and constraint verification involve strict mathematical addition, currency checks, temporal feasibility, and safety boundaries. Probabilistic Large Language Models (LLMs) hallucinate arithmetic totals, fail floating-point precision, and display sycophantic tendencies that overlook scheduling conflicts and budget overages.
+
+### Decision
+1. **Zero LLM Arithmetic in Budgeting**:
+   - `BudgetEngine` is implemented in pure Python with exact floating-point precision.
+   - Calculates flights, hotels, activities, food allowances, local transit, and incidental buffers deterministically.
+   - Enforces a **STRICT budget strategy**: if `total_estimated_cost > budget`, marks `within_budget = False`, calculates exact overage and utilization %, and issues an `OVER_BUDGET` warning.
+   - Currency mismatch is flagged as an explicit advisory notice rather than executing ungrounded conversions until the Currency MCP/API is introduced.
+2. **Zero LLM Logic in Feasibility Validation**:
+   - `ValidatorEngine` applies deterministic Python rules to verify itinerary viability:
+     - *Dates*: Enforces positive durations, valid ISO parsing, and date order (`end_date >= start_date`). Supports flexible unpinned dates with non-fatal warnings.
+     - *Travelers*: Enforces positive integer headcounts (`travelers >= 1`).
+     - *Flights*: Verifies departure strictly precedes arrival (`departure < arrival`).
+     - *Hotels*: Validates non-negative nightly rates and stay durations.
+     - *Activities*: Detects duplicate activity recommendations and flags travel-time conflicts (`POSSIBLE_TIME_CONFLICT`) when flight arrivals buffer insufficiently with activity starts.
+     - *Weather*: Audits presence of meteorological feeds; flags `WEATHER_UNAVAILABLE` on agent failure without fabricating forecasts.
+3. **Tiered Severity Hierarchy**:
+   - `INFO`: Informational telemetry notice (e.g. `DEMO_DATA_ACTIVE`).
+   - `WARNING`: Non-fatal advisory (e.g. `OVER_BUDGET`, `WEATHER_UNAVAILABLE`, `POSSIBLE_TIME_CONFLICT`, `CURRENCY_MISMATCH`). Workflow transitions to `READY_WITH_WARNINGS`.
+   - `ERROR`: Critical blocking invalidity (e.g. `INVALID_DATE_ORDER`, `INVALID_TRAVELER_COUNT`, `NEGATIVE_BUDGET`). Workflow transitions to `VALIDATION_FAILED`.
+   - When 0 errors and 0 warnings exist: workflow transitions to `READY_FOR_ITINERARY`.
+4. **LangGraph Pipeline Integration**:
+   - The workflow connects `[flight, hotel, activity, weather] -> research -> budget_engine -> validator -> END`.
+   - Budget Engine and Validator are explicitly tracked in `agent_runs` as `engine_type: "DETERMINISTIC"`.
+
+
 

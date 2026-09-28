@@ -206,14 +206,19 @@ def render_new_trip_page() -> None:
                     st.markdown(f"• {q}")
                 st.caption("💬 Head to the **Conversation** page to provide these details to the assistant.")
             else:
-                status_text = planning_state.get("planning_status", "READY_FOR_VALIDATION")
-                st.success(f"✅ **Multi-Agent Travel Analysis Complete.** (Status: `{status_text}`)")
+                status_text = planning_state.get("planning_status", "READY_FOR_ITINERARY")
+                if "VALIDATION_FAILED" in status_text:
+                    st.error(f"❌ **Itinerary Validation Failed** (Status: `{status_text}`)")
+                elif "WARNINGS" in status_text:
+                    st.warning(f"⚠️ **Travel Analysis Complete With Warnings** (Status: `{status_text}`)")
+                else:
+                    st.success(f"✅ **Multi-Agent Travel Analysis & Validation Complete.** (Status: `{status_text}`)")
 
-                st.markdown("#### Specialized Agents Execution Progress (DEMO DATA)")
+                st.markdown("#### Execution Pipeline Progress (Reasoning + Deterministic Engines)")
                 runs = planning_state.get("agent_runs", [])
                 run_status_map = {r.get("agent_name"): r.get("status") for r in runs}
 
-                prog_col1, prog_col2, prog_col3 = st.columns(3)
+                prog_col1, prog_col2, prog_col3, prog_col4 = st.columns(4)
                 with prog_col1:
                     p_st = run_status_map.get("planner", "SUCCESS")
                     f_st = run_status_map.get("flight", "SUCCESS")
@@ -227,10 +232,38 @@ def render_new_trip_page() -> None:
                 with prog_col3:
                     w_st = run_status_map.get("weather", "SUCCESS")
                     r_st = run_status_map.get("research", "SUCCESS")
-                    st.markdown(f"• **Weather Agent**: `✓ {w_st}`")
+                    st.markdown(f"• **Weather Agent**: `{'✓ ' + w_st if w_st != 'FAILED' else '⚠ FAILED'}`")
                     st.markdown(f"• **Research Agent**: `✓ {r_st}`")
+                with prog_col4:
+                    b_st = run_status_map.get("budget_engine", "SUCCESS")
+                    v_st = run_status_map.get("validator_engine", "SUCCESS")
+                    st.markdown(f"• **Budget Engine**: `✓ {b_st}`")
+                    st.markdown(f"• **Validator**: `✓ {v_st}`")
 
-                st.caption("🔍 Navigate to **Flights**, **Hotels**, **Activities**, **Weather**, or **Agent Trace** in the sidebar to inspect domain deliverables.")
+                # Validation Status Checklist from actual ValidationResult
+                val_data = planning_state.get("validation_results") or {}
+                if val_data:
+                    st.markdown("#### Deterministic Feasibility Audit")
+                    v_issues = val_data.get("issues", [])
+                    has_budget_issue = any(i.get("component") == "budget" for i in v_issues)
+                    has_date_issue = any(i.get("component") == "dates" for i in v_issues)
+                    has_traveler_issue = any(i.get("component") == "travelers" for i in v_issues)
+                    has_weather_issue = any(i.get("component") == "weather" for i in v_issues)
+                    has_act_issue = any(i.get("component") == "activities" for i in v_issues)
+
+                    vc1, vc2, vc3, vc4, vc5 = st.columns(5)
+                    with vc1:
+                        st.markdown(f"**Budget Cap**: {'⚠️ Over Budget' if has_budget_issue else '✓ Verified'}")
+                    with vc2:
+                        st.markdown(f"**Dates Order**: {'❌ Invalid' if has_date_issue else '✓ Verified'}")
+                    with vc3:
+                        st.markdown(f"**Travellers**: {'❌ Invalid' if has_traveler_issue else '✓ Verified'}")
+                    with vc4:
+                        st.markdown(f"**Weather Feed**: {'⚠️ Unavailable' if has_weather_issue else '✓ Verified'}")
+                    with vc5:
+                        st.markdown(f"**Activities**: {'⚠️ Time Conflict' if has_act_issue else '✓ Consistent'}")
+
+                st.caption("🔍 Navigate to **Budget**, **Flights**, **Hotels**, **Activities**, **Weather**, or **Agent Trace** in the sidebar to inspect full deliverables.")
 
             st.markdown("### Submitted Trip Overview")
             render_trip_summary_card(travel_req)
@@ -252,7 +285,7 @@ def render_new_trip_page() -> None:
 
         active_trip_id = st.session_state.get("current_trip_id")
         if st.button("⚡ Run / Re-run Travel Analysis", type="primary", use_container_width=True):
-            with st.spinner("Executing Multi-Agent Workflow (Planner, Flight, Hotel, Activity, Weather, Research)..."):
+            with st.spinner("Executing Pipeline (Planner, Flight, Hotel, Activity, Weather, Research, Budget, Validator)..."):
                 analysis_prompt = (
                     f"Trip from {active_trip_obj.origin} to {active_trip_obj.destination} "
                     f"from {active_trip_obj.start_date} to {active_trip_obj.end_date} for {active_trip_obj.travelers} traveler(s), "
@@ -264,5 +297,5 @@ def render_new_trip_page() -> None:
                     trip_id=active_trip_id,
                     session_state=st.session_state,
                 )
-            st.success("✅ Multi-Agent Workflow Executed! Check Flights, Hotels, Activities, and Weather in the sidebar.")
+            st.success("✅ Multi-Agent Workflow Executed! Check Budget, Flights, Hotels, Activities, and Weather in the sidebar.")
             st.rerun()
