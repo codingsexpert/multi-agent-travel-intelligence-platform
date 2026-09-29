@@ -205,8 +205,9 @@ def inject_custom_styles() -> None:
             font-size: 0.85rem;
             color: #94A3B8;
             max-width: 420px;
-            margin: 0 auto 1.25rem auto;
-            line-height: 1.4;
+        /* Hide default Streamlit multi-page list in favor of custom two-tier navigation */
+        [data-testid="stSidebarNav"] {
+            display: none !important;
         }
         </style>
         """,
