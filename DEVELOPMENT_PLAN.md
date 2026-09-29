@@ -457,22 +457,26 @@ This development plan breaks down the construction of the platform into **18 dis
 
 ---
 
-## Phase 11: Guardrails & Security Implementation
-- **Objective**: Enforce multi-layer safety across inputs, tool calls, and outputs.
+## Phase 11: Production Guardrails & Security Implementation (COMPLETED)
+- **Objective**: Build a centralized, Zero-Trust production security layer protecting user inputs, agent reasoning, tool invocations, RAG contexts, web contents, outputs, and runtime limits.
 - **Implementation Tasks**:
-  1. Build `src/guardrails/input_guardrails.py`: Detect prompt injection, role hijacking, and illegal character payloads.
-  2. Build `src/guardrails/tool_guardrails.py`: Verify tool permissions, enforce argument whitelisting, and block unauthorized commands.
-  3. Build `src/guardrails/output_guardrails.py`: Strict Pydantic validation, fact-grounding check against tool observations, and PII masking.
-  4. Attach guardrails to LangGraph entry and exit nodes.
+  1. Build `guardrails/input.py`: Validate user inputs, detect prompt injection / jailbreak patterns, validate travel parameters (dates, budgets, currencies, traveler counts), and sanitize PII.
+  2. Build `guardrails/tools.py`: Enforce least-privilege role allowlists, argument validation, and autonomously block high-risk actions (booking, payments, cancellations).
+  3. Build `guardrails/output.py`: Validate agent outputs against Pydantic schemas, verify positive value bounds, and check fact/source metadata attribution.
+  4. Build `guardrails/security.py`: Implement `SecretRedactor` (continuous masking of credentials/tokens), `PIISanitizer`, `RateLimiter` (sliding-window limit), `WorkflowCircuitBreaker` (step/tool/retry/timeout ceilings), and `SecurityAuditor`.
+  5. Integrate into LangGraph (`graph/workflow.py`), MCP Client (`mcp/client.py`), and Streamlit UI (`app/pages/agent_trace.py` & `app/pages/settings.py`).
+  6. Build comprehensive test suite `tests/test_guardrails.py` covering all 36 specified security scenarios.
 - **Files / Components**:
-  - `src/guardrails/input_guardrails.py`, `src/guardrails/tool_guardrails.py`, `src/guardrails/output_guardrails.py`
+  - `guardrails/input.py`, `guardrails/tools.py`, `guardrails/output.py`, `guardrails/security.py`, `guardrails/__init__.py`
   - `tests/test_guardrails.py`
+  - Updates: `config/settings.py`, `utils/exceptions.py`, `mcp/client.py`, `graph/state.py`, `graph/workflow.py`, `services/planning_service.py`, `app/pages/agent_trace.py`, `app/pages/settings.py`
 - **Testing Requirements**:
-  - Pass adversarial injection prompts, malformed schemas, and PII; verify rejection or sanitization.
+  - 36 dedicated deterministic security tests covering input validation, prompt injection, tool authorization, high-risk blocking, SSRF, secret redaction, PII sanitization, rate limits, circuit breakers, RLS isolation, output schemas, and DEMO/LIVE consistency. All 231 tests pass.
 - **Expected Output**:
-  - Hardened execution pipeline safe against adversarial inputs and hallucinations.
+  - Hardened execution pipeline safe against adversarial inputs, data exfiltration, runaway loops, and unauthorized tool calls.
 
 ---
+
 
 ## Phase 12: Dynamic Replanning Engine
 - **Objective**: Enable surgical delta-replanning in response to disruptions without regenerating the entire trip.

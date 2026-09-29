@@ -13,6 +13,8 @@ from models.mcp import (
 )
 from mcp.registry import MCPToolRegistry
 from mcp.security import MCPSecurityManager
+from guardrails.tools import ToolGuardrail
+from guardrails.security import SecretRedactor
 from mcp.providers.base import (
     ProviderError,
     ProviderConfigurationError,
@@ -75,19 +77,35 @@ class MCPClient:
         retries_used = 0
 
         # Sanitize arguments for telemetry audit
-        safe_args = MCPSecurityManager.sanitize_metadata(arguments)
+        safe_args = SecretRedactor.redact_dict(MCPSecurityManager.sanitize_metadata(arguments))
 
         logger.info(f"[MCPClient] Agent '{agent_name}' invoking tool '{tool_name}' (ID: {exec_id})")
 
-        # 1. Least-Privilege Permission Check
-        try:
-            MCPSecurityManager.verify_tool_permission(agent_name=agent_name, tool_name=tool_name)
-        except PermissionError as pe:
+        # 1. Centralized Tool Guardrail: Authorization, High-Risk Check, Argument Validation, Rate Limiting
+        auth_res = ToolGuardrail.authorize(
+            agent_role=agent_name,
+            tool_name=tool_name,
+            arguments=arguments,
+            execution_id=exec_id,
+        )
+
+        if not auth_res.authorized:
             duration_ms = round((time.time() - start_time) * 1000, 2)
+            if auth_res.category in ("HIGH_RISK_BLOCKED", "PERMISSION_DENIED"):
+                status = ToolExecutionStatus.UNAUTHORIZED
+                error_code = auth_res.category
+            elif auth_res.category == "RATE_LIMITED":
+                status = ToolExecutionStatus.FAILED
+                error_code = "RATE_LIMIT_EXCEEDED"
+            else:
+                status = ToolExecutionStatus.FAILED
+                error_code = "INVALID_ARGUMENTS"
+
+            err_msg = SecretRedactor.redact_text(auth_res.reason or "Tool authorization denied.")
             err = ToolExecutionError(
                 tool_name=tool_name,
-                error_code="PERMISSION_DENIED",
-                message=str(pe),
+                error_code=error_code,
+                message=err_msg,
                 retryable=False,
                 execution_id=exec_id,
             )
@@ -95,11 +113,11 @@ class MCPClient:
                 exec_id=exec_id,
                 tool_name=tool_name,
                 agent_name=agent_name,
-                status=ToolExecutionStatus.UNAUTHORIZED,
+                status=status,
                 duration_ms=duration_ms,
                 safe_args=safe_args,
                 retries=0,
-                error=str(pe),
+                error=err_msg,
                 mode="DEMO" if is_demo else "LIVE",
             )
             return MCPToolResult(
@@ -110,6 +128,7 @@ class MCPClient:
                 mode="DEMO" if is_demo else "LIVE",
                 demo_data=is_demo,
             )
+
 
         # 2. Lookup Tool Descriptor
         descriptor = MCPToolRegistry.get_tool(tool_name)

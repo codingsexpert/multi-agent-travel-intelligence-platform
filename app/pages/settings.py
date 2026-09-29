@@ -160,9 +160,40 @@ def render_settings_page() -> None:
     st.markdown("---")
 
     # --------------------------------------------------------------------------
-    # 4. Session Controls
+    # 4. Security & Guardrails Policies (Phase 11)
+    # --------------------------------------------------------------------------
+    st.subheader("🛡️ Production Guardrails & Security Policies")
+    st.caption("Active runtime execution limits, circuit breakers, and security parameters.")
+
+    g1, g2, g3, g4 = st.columns(4)
+    with g1:
+        st.markdown("**Max Agent Steps**")
+        st.code(str(settings.max_agent_steps))
+        st.markdown("**Max Input Chars**")
+        st.code(str(settings.max_input_chars))
+    with g2:
+        st.markdown("**Max Tool Calls**")
+        st.code(str(settings.max_tool_calls))
+        st.markdown("**Max Context Chars**")
+        st.code(str(settings.max_context_chars))
+    with g3:
+        st.markdown("**Max Search Calls**")
+        st.code(str(settings.max_search_calls))
+        st.markdown("**Workflow Timeout**")
+        st.code(f"{settings.workflow_timeout_seconds}s")
+    with g4:
+        st.markdown("**Max Retries**")
+        st.code(str(settings.max_retries))
+        st.markdown("**Rate Limit**")
+        st.code(f"{settings.rate_limit_requests} req / {settings.rate_limit_window_seconds}s")
+
+    st.markdown("---")
+
+    # --------------------------------------------------------------------------
+    # 5. Session Controls
     # --------------------------------------------------------------------------
     st.subheader("Session State Controls")
+
     if st.button("🔄 Reset Active Trip & Session State", type="secondary"):
         st.session_state.clear()
         st.success("Session state cleared.")

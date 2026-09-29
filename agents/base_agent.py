@@ -49,12 +49,16 @@ def execute_agent_safely(
             "mode": "DETERMINISTIC" if engine_type == "DETERMINISTIC" else ("DEMO" if is_demo else "LIVE"),
         }
         logger.info(f"[{agent_name.capitalize()}] Execution succeeded in {duration_ms}ms")
-        return delta, run_record
+        from guardrails.security import SecretRedactor
+        return delta, SecretRedactor.redact_dict(run_record)
+
 
     except Exception as e:
         duration_ms = round((time.time() - start_time) * 1000, 2)
         completed_at = datetime.now(timezone.utc).isoformat()
-        err_msg = f"{agent_name.capitalize()} failed: {str(e)}"
+        from guardrails.security import SecretRedactor
+        safe_err = SecretRedactor.redact_text(str(e))
+        err_msg = f"{agent_name.capitalize()} failed: {safe_err}"
         logger.error(f"[{agent_name.capitalize()}] Failure isolated: {err_msg}")
 
         run_record = {
@@ -64,13 +68,14 @@ def execute_agent_safely(
             "started_at": started_at,
             "completed_at": completed_at,
             "duration_ms": duration_ms,
-            "error": str(e),
+            "error": safe_err,
             "is_demo": is_demo,
             "demo_mode": is_demo,
             "engine_type": engine_type,
             "mode": "DETERMINISTIC" if engine_type == "DETERMINISTIC" else ("DEMO" if is_demo else "LIVE"),
         }
         fallback_delta: Dict[str, Any] = {
-            "warnings": [f"Specialized agent '{agent_name}' encountered an error: {str(e)}."],
+            "warnings": [f"Specialized agent '{agent_name}' encountered an error: {safe_err}."],
         }
-        return fallback_delta, run_record
+        return fallback_delta, SecretRedactor.redact_dict(run_record)
+

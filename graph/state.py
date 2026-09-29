@@ -78,6 +78,8 @@ class TravelState(TypedDict, total=False):
     agent_runs: Annotated[List[Dict[str, Any]], operator.add]
     tool_calls: Annotated[List[Dict[str, Any]], operator.add]
     rag_retrievals: Annotated[List[Dict[str, Any]], operator.add]
+    security_events: Annotated[List[Dict[str, Any]], operator.add]
+    guardrail_status: Dict[str, Any]
     retry_count: int
     graph_step_count: int
     is_demo: bool
@@ -133,7 +135,17 @@ def create_initial_state(
         agent_runs=[],
         tool_calls=[],
         rag_retrievals=[],
+        security_events=[],
+        guardrail_status={
+            "input": {"status": "INITIALIZED", "allowed": True},
+            "tools": {"status": "AUTHORIZED"},
+            "rag": {"status": "VALIDATED"},
+            "web": {"status": "VALIDATED"},
+            "output": {"status": "VALIDATED"},
+            "runtime": {"status": "WITHIN_LIMITS"},
+        },
         retry_count=0,
         graph_step_count=0,
         is_demo=is_demo,
     )
+

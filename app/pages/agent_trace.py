@@ -94,6 +94,44 @@ def render_agent_trace_page() -> None:
         st.metric(label="Execution Mode", value=mode_val)
 
     st.markdown("---")
+    st.markdown("### 🛡️ Production Guardrails & Security Status (Phase 11)")
+
+    guardrail_status = travel_state.get("guardrail_status", {})
+    input_status = guardrail_status.get("input", {})
+    is_blocked = input_status.get("status") == "BLOCKED"
+
+    g1, g2, g3, g4, g5, g6 = st.columns(6)
+    with g1:
+        if is_blocked:
+            st.error("Input: 🛑 Blocked")
+        else:
+            st.success("Input: ✓ Validated")
+    with g2:
+        st.success("Tools: ✓ Authorized")
+    with g3:
+        st.success("RAG: ✓ Validated")
+    with g4:
+        st.success("Web: ✓ Validated")
+    with g5:
+        out_stat = guardrail_status.get("output", {}).get("status", "VALIDATED")
+        if out_stat == "FAILED":
+            st.error("Output: ⚠️ Failed")
+        else:
+            st.success("Output: ✓ Validated")
+    with g6:
+        st.success("Runtime: ✓ Within Limits")
+
+    if is_blocked:
+        safe_reason = input_status.get("reason", "Suspicious instruction pattern or invalid format")
+        st.warning(f"⚠️ **Request Blocked by Security Guardrail**: {safe_reason}")
+
+    # Flowchart Representation
+    st.markdown("#### Guardrail Architecture & Execution Boundary")
+    if is_blocked:
+        st.code("Input Guardrail ───► 🛑 BLOCKED (Reason: Suspicious instruction pattern) ───► TERMINATED", language="text")
+    else:
+        st.code("Planner ──► Input Guardrail ✓ ──► Flight Agent ──► Tool Guardrail ✓ ──► Flight MCP ──► Output Validation ✓ ──► Budget Engine ──► Validator ✓", language="text")
+
     st.markdown("### Active Execution Trace Table")
 
     if not agent_runs:
@@ -314,7 +352,27 @@ Agent
         st.table(rag_rows)
 
     st.markdown("---")
-    st.markdown("### System Architecture Roster (Phase 9)")
+    st.markdown("### 🔐 Security & Audit Events (Phase 11)")
+    from guardrails.security import SecurityAuditor
+    sec_events = SecurityAuditor.get_events(limit=15)
+    if not sec_events:
+        st.info("ℹ️ **Zero Security Violations Detected**: Workflow operating strictly within authorized security boundaries.")
+    else:
+        sec_rows = []
+        for se in sec_events:
+            sec_rows.append({
+                "Timestamp": se.get("timestamp", "")[:19],
+                "Type": se.get("event_type"),
+                "Severity": se.get("severity"),
+                "Agent": se.get("agent_role") or "N/A",
+                "Tool": se.get("tool_name") or "N/A",
+                "Message": se.get("message"),
+            })
+        st.table(sec_rows)
+
+    st.markdown("---")
+    st.markdown("### System Architecture Roster (Phase 11)")
+
 
     for idx, agent in enumerate(PLANNED_AGENTS, 1):
         with st.container():

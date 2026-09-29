@@ -400,4 +400,52 @@ In Phase 10, the multi-agent travel platform requires access to fresh, volatile,
    - In `DEMO_MODE=true`: Deterministic mock results marked `DEMO` with realistic publication dates, trust classifications, and structured findings.
    - In `DEMO_MODE=false`: Queries live Tavily AI or Brave Search API. If credentials are missing, raises explicit `ProviderConfigurationError` without fabricating live data.
 
+---
+
+## ADR-18: Centralized Production Guardrails, Zero Trust Security Layer, and Execution Circuit Breakers
+
+### Context
+In Phase 11, the multi-agent travel intelligence platform requires an enterprise-grade, centralized security and guardrails architecture protecting the system across all attack vectors: user inputs, agent reasoning boundaries, tool executions, MCP invocations, RAG knowledge retrievals, external web content, API payloads, outputs, and multi-tenant persistence. A decentralized, ad-hoc approach where each agent implements custom validation leads to inconsistent policies, security blindspots, and code duplication. Furthermore, relying purely on LLMs for safety checks introduces non-deterministic vulnerabilities and latency.
+
+### Decision
+1. **Zero Trust Architecture**:
+   - Every external artifact (`USER INPUT`, `RETRIEVED RAG CONTENT`, `WEB CONTENT`, `TOOL RESULTS`, `EXTERNAL API RESPONSES`) is categorized as untrusted data (`untrusted: True`).
+   - The security boundary follows a deterministic four-tier pipeline:
+     ```
+     USER -> INPUT GUARDRAILS -> LANGGRAPH -> AGENTS -> TOOL GUARDRAILS -> MCP/RAG/WEB -> OUTPUT GUARDRAILS -> VALIDATOR -> RESPONSE
+     ```
+2. **Deterministic-First Security Controls**:
+   - Safety does not rely exclusively on an LLM judge.
+   - Core controls use deterministic validation: strict Pydantic v2 schemas, role-based allowlists, regex pattern filters, URL network checks, circuit breakers, and sliding-window rate limiters.
+3. **Input Guardrails & Prompt Injection Defense (`guardrails/input.py`)**:
+   - Length bounds (`MAX_INPUT_CHARS=2000`).
+   - Instruction/Data Separation: blocks explicit prompt injection (`ignore previous instructions`, `reveal system prompt`, `show api keys`, `bypass security`) and code execution syntax (`eval`, `__import__`, `<script>`).
+   - Domain parameter validation: positive budgets, realistic traveler counts (1–50), ISO currency checks, valid date sequences (return >= departure), minimum 1-day trip duration.
+   - Automatic PII detection and masking (credit cards, passport numbers, email, phone numbers).
+4. **Tool Guardrails & High-Risk Action Blocking (`guardrails/tools.py`)**:
+   - Centralized authorization layer inside `MCPClient.call_tool()`.
+   - Explicit agent allowlists: Flight (`search_flights`, `compare_flights`, `get_flight_details`), Hotel (`search_hotels`, `get_hotel_details`), Activity (`search_places`, `calculate_route`, `estimate_travel_time`), Weather (`get_current_weather`, `get_forecast`, `get_weather_alerts`), Research (`web_search`, `fetch_page`, `search_news`), Budget/Validator (`get_exchange_rate`, `estimate_travel_time`).
+   - **Autonomous High-Risk Action Blocker**: Unconditionally blocks autonomous execution of `booking`, `purchasing`, `payment`, `cancellation`, and `financial_transaction`. These require explicit human approval in future phases.
+   - Argument validation: coordinates, dates, currencies, and bounded search queries.
+5. **Output Guardrails & Fact/Source Safety (`guardrails/output.py`)**:
+   - Pydantic schema validation for every agent deliverable.
+   - Prohibits negative pricing, negative budgets, or invalid temporal spans.
+   - Fact/Source Safety: verifies all external claims carry legitimate attribution (`source`, `provider`, `retrieved_at`, `status`); prohibits fabricated citations.
+6. **Secret Management & PII Sanitization (`guardrails/security.py`)**:
+   - `SecretRedactor`: Continuously redacts OpenAI/Tavily keys, JWTs, Bearer tokens, passwords, postgres connection strings, and Authorization headers across logs, exceptions, and traces.
+   - Secrets are strictly forbidden from being stored in LangGraph state.
+   - `PIISanitizer`: Masks credit cards, passport numbers, phone numbers, and emails.
+7. **Execution Circuit Breakers & Rate Limiting (`guardrails/security.py`)**:
+   - `WorkflowCircuitBreaker`: Enforces hard runtime limits (`MAX_AGENT_STEPS=15`, `MAX_TOOL_CALLS=25`, `MAX_RETRIES=2`, `MAX_SEARCH_CALLS=5`, `WORKFLOW_TIMEOUT_SECONDS=30.0`). Prevents infinite LangGraph loops.
+   - `RateLimiter`: Thread-safe sliding-window rate limiter (`RATE_LIMIT_REQUESTS=60 / 60s`).
+8. **Structured Security Auditing & Safe Telemetry**:
+   - `SecurityAuditor`: Records structured security events (`PROMPT_INJECTION_DETECTED`, `HIGH_RISK_ACTION_BLOCKED`, `TOOL_PERMISSION_DENIED`, etc.) with safe metadata.
+   - Streamlit UI (`agent_trace.py` and `settings.py`) provides real-time visibility into guardrail statuses and security events.
+9. **Supabase Row-Level Security (RLS) & Tenant Isolation**:
+   - All relational tables enforce `auth.uid() = user_id`.
+   - Cross-user data leakage is strictly blocked at the database engine tier.
+10. **Consistent DEMO vs LIVE Guardrails**:
+    - Security guardrails remain 100% active in both `DEMO_MODE=true` and `DEMO_MODE=false`. Mocking data never bypasses safety boundaries.
+
+
 

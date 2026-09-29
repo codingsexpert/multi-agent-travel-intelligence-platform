@@ -184,16 +184,25 @@ def run_travel_planning(
                     f"• **Destination Intelligence**: {'Compiled' if has_research else 'Unavailable'}\n\n"
                     f"Visit the **Budget**, **Flights**, **Hotels**, **Activities**, **Weather**, and **Agent Trace** pages to inspect detailed deterministic calculations and validation reports."
                 )
+            elif final_state.get("planning_status") == WorkflowStatus.FAILED.value:
+                err_list = final_state.get("errors") or ["Request rejected by safety and validation constraints."]
+                from guardrails.security import SecretRedactor
+                safe_err = SecretRedactor.redact_text(err_list[0])
+                assistant_text = f"❌ **Request Blocked**: {safe_err}"
             else:
                 assistant_text = f"Planning status: {final_state.get('planning_status')}."
+
+            from guardrails.security import SecretRedactor
+            safe_assistant_text = SecretRedactor.redact_text(assistant_text)
 
             m_repo.create_message(
                 conversation_id=conversation_id,
                 role="assistant",
-                content=assistant_text,
+                content=safe_assistant_text,
             )
         except Exception as e:
             logger.warning(f"[PlanningService] Failed to record assistant reply message: {str(e)}")
+
 
     # 7. Update session state if provided
     if session_state is not None:

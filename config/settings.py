@@ -85,6 +85,48 @@ class Settings(BaseSettings):
         description="Overlap between adjacent chunks in characters/tokens",
     )
 
+    # Production Guardrails & Security Limits (Phase 11)
+    max_agent_steps: int = Field(
+        default=15,
+        description="Maximum agent execution steps permitted in a single workflow run",
+    )
+    max_tool_calls: int = Field(
+        default=25,
+        description="Maximum external tool invocations permitted per workflow run",
+    )
+    max_retries: int = Field(
+        default=2,
+        description="Maximum retry attempts on transient network or 5xx provider failures",
+    )
+    max_search_calls: int = Field(
+        default=5,
+        description="Maximum web search or news calls permitted per workflow run",
+    )
+    max_rag_results: int = Field(
+        default=10,
+        description="Maximum curated RAG chunks retrieved per query",
+    )
+    max_input_chars: int = Field(
+        default=2000,
+        description="Hard character limit on raw user travel requests",
+    )
+    max_context_chars: int = Field(
+        default=15000,
+        description="Maximum characters for assembled context windows",
+    )
+    workflow_timeout_seconds: float = Field(
+        default=30.0,
+        description="Hard timeout ceiling for complete LangGraph workflow execution",
+    )
+    rate_limit_requests: int = Field(
+        default=60,
+        description="Maximum allowed requests per sliding time window",
+    )
+    rate_limit_window_seconds: int = Field(
+        default=60,
+        description="Sliding window duration in seconds for rate limiter",
+    )
+
     @property
     def is_production(self) -> bool:
         """Check if running in production."""

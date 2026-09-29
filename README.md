@@ -306,7 +306,7 @@ The platform is developed in **18 distinct phases**:
 - [x] **Phase 8: Real External APIs & Provider Integration** *(Completed)*
 - [x] **Phase 9: RAG Knowledge Base & Supabase pgvector** *(Completed)*
 - [x] **Phase 10: Web Search & Fresh Information Research** *(Completed)*
-- [ ] **Phase 11: Guardrails & Security Implementation**
+- [x] **Phase 11: Production Guardrails & Security Layer** *(Completed)*
 - [ ] **Phase 12: Dynamic Replanning Engine**
 - [ ] **Phase 13: Human-in-the-Loop (HITL) Gateways**
 - [ ] **Phase 14: LangSmith Observability & Tracing**
@@ -317,7 +317,61 @@ The platform is developed in **18 distinct phases**:
 
 ---
 
+## 🛡️ Phase 11: Production Guardrails & Zero Trust Security Layer
+
+Phase 11 implements a centralized, production-oriented security and guardrails architecture protecting the entire platform. Following a strict **Zero Trust** model, all incoming user inputs, retrieved RAG documents, scraped web pages, external API payloads, and LLM completions are treated as untrusted data (`untrusted: True`).
+
+### Security Architecture & Flow
+
+```
+                 USER
+                  ↓
+            INPUT GUARDRAIL
+                  ↓
+              LANGGRAPH
+                  ↓
+               AGENT
+                  ↓
+            TOOL GUARDRAIL
+                  ↓
+            MCP / RAG / WEB
+                  ↓
+           OUTPUT GUARDRAIL
+                  ↓
+              VALIDATOR
+                  ↓
+              RESPONSE
+```
+
+### The 4 Centralized Guardrail Layers
+
+1. **Input Guardrails (`guardrails/input.py`)**:
+   - **Prompt Injection Defense**: Deterministic regex protection against instruction overrides (`ignore previous instructions`, `reveal system prompt`, `show api keys`, `bypass security`) and code execution syntax (`eval`, `__import__`, `<script>`).
+   - **Travel Domain Validation**: Strictly validates destinations, positive budgets, realistic traveler counts (1–50), standard 3-letter ISO currencies, logical date sequences (return >= departure), and minimum 1-day trip duration.
+   - **Input Length Bounds**: Hard bounds (`MAX_INPUT_CHARS=2000`) preventing token-exhaustion attacks.
+   - **Automatic PII Sanitization**: Automatically masks credit cards, passport numbers, email addresses, and phone numbers.
+
+2. **Tool Guardrails & Authorization (`guardrails/tools.py`)**:
+   - **Role-Based Tool Allowlists**: Enforces least-privilege tool execution per agent role (e.g. Flight Agent cannot invoke hotel or weather tools).
+   - **Autonomous High-Risk Action Blocker**: Unconditionally blocks autonomous execution of `booking`, `purchasing`, `payment`, `cancellation`, and `financial_transaction`.
+   - **Argument Validation**: Validates geographic coordinates, bounds search queries, validates ISO dates, and checks numbers prior to dispatch.
+
+3. **Output Guardrails & Fact Safety (`guardrails/output.py`)**:
+   - **Pydantic Schema Validation**: Every agent deliverable is parsed and validated against strict schemas (`PlannerResult`, `FlightOption`, `HotelOption`, `ActivityOption`, `BudgetSummary`, `ValidationResult`).
+   - **Bounds Verification**: Prevents negative pricing, negative budget totals, or invalid itineraries.
+   - **Fact & Source Attribution**: Mandates authentic source attribution (`source`, `provider`, `retrieved_at`, `status`); prohibits fabricated citations.
+
+4. **Runtime Security, Circuit Breakers & Auditing (`guardrails/security.py`)**:
+   - **Secret Redactor**: Continuous regex engine masking API keys (`sk-...`, `tvly-...`), JWTs, Bearer tokens, postgres passwords, and Authorization headers across logs, traces, and UI.
+   - **Workflow Circuit Breakers**: Configurable limits (`MAX_AGENT_STEPS=15`, `MAX_TOOL_CALLS=25`, `MAX_RETRIES=2`, `WORKFLOW_TIMEOUT_SECONDS=30.0`) preventing infinite LangGraph loops.
+   - **Sliding-Window Rate Limiter**: Thread-safe in-memory rate limiting (`RATE_LIMIT_REQUESTS=60 / 60s`).
+   - **Security Auditor**: Structured, redacted security event logging (`PROMPT_INJECTION_DETECTED`, `HIGH_RISK_ACTION_BLOCKED`, `TOOL_PERMISSION_DENIED`, etc.).
+   - **Supabase Tenant Isolation**: Enforces database Row-Level Security (`auth.uid() = user_id`) across all tables.
+
+---
+
 ## 🌐 Phase 10: Web Search & Fresh Information Research
+
 
 Phase 10 introduces a production-oriented, secure web research layer operating through the **Search MCP** boundary. It enables reasoning agents to retrieve fresh, time-sensitive intelligence that must **not** come from static RAG or structured operational APIs.
 

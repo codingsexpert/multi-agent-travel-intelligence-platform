@@ -771,19 +771,73 @@ erDiagram
 
 ---
 
-## 10. Guardrails & Security Architecture
+## 10. Guardrails & Security Architecture (Phase 11)
 
-1. **Input Guardrails**:
-   - Inspects raw prompts for known jailbreaks, role-reversal attacks, and prompt injection signatures.
-   - Rejects or sanitizes prompts attempting to alter core instructions or extract system prompts.
-2. **Tool Execution Guardrails**:
-   - Whitelisted tool names per agent.
-   - Deterministic argument validation using Pydantic schemas before tool dispatch.
-   - Least-privilege: Read-only for discovery agents; write/booking tools strictly gatekeeped.
-3. **Output Guardrails**:
-   - Every agent output passes through `pydantic.BaseModel.model_validate_json()`.
-   - Prevents malformed JSON or markdown codeblocks from corrupting the graph state.
-   - PII filter scrubs phone numbers, credit card numbers, or passport numbers from persistent logs.
+The platform enforces a **Zero Trust** security model across all internal and external communication boundaries. 
+User inputs, retrieved RAG documents, scraped web pages, external API payloads, and LLM completions are all categorized as untrusted data.
+
+### 10.1 End-to-End Security Architecture Flow
+
+```
+                 USER
+                  ↓
+            INPUT GUARDRAIL
+                  ↓
+              LANGGRAPH
+                  ↓
+               AGENT
+                  ↓
+            TOOL GUARDRAIL
+                  ↓
+            MCP / RAG / WEB
+                  ↓
+           OUTPUT GUARDRAIL
+                  ↓
+              VALIDATOR
+                  ↓
+              RESPONSE
+```
+
+### 10.2 Threat Model & Defenses
+
+| Threat Surface | Vulnerability / Attack Vector | Defensive Controls |
+|---|---|---|
+| **User Input** | Prompt injection, jailbreak ("ignore previous instructions"), system prompt extraction, API key leakage | Regex & pattern matching, length limits (`MAX_INPUT_CHARS=2000`), structural validation, PII redaction |
+| **Agent Reasoning** | Instruction overriding via external data | Strict data/instruction separation (`<DATA_BOUNDARY untrusted="true">`), read-only system prompt |
+| **Tool Execution** | Unauthorized execution of destructive actions, parameter tampering, command injection | Role-based tool allowlist, autonomous blocker for high-risk actions (booking, payments, cancellations), argument boundary checks |
+| **MCP Providers** | SSRF, loopback network access (`127.0.0.1`, `localhost`, `169.254.169.254`, private IPs) | IP pattern filtering, strict protocol allowlists (`http`, `https` only), domain allowlists for search |
+| **RAG Knowledge** | Poisoned chunks, embedded jailbreak commands | Ingestion sanitization, defensive markdown wrapping, metadata attribution |
+| **External Web** | Malicious HTML, tracking scripts, command overrides | HTML script/style stripping, prompt command neutralization, size bounds |
+| **Agent Outputs** | Hallucinated schemas, negative pricing, broken dates, fabricated citations | Pydantic v2 schema enforcement, source verification, secret redaction |
+| **Data Persistence** | Multi-tenant data leakage | Supabase Row-Level Security (RLS) enforcing `auth.uid() = user_id` across all relational tables |
+| **Runtime Limits** | Runaway loops, token explosion, denial-of-service | Workflow circuit breakers (`MAX_AGENT_STEPS=15`, `MAX_TOOL_CALLS=25`, `WORKFLOW_TIMEOUT_SECONDS=30.0`), sliding-window rate limiters |
+
+### 10.3 The Four Centralized Guardrail Layers
+
+1. **Input Guardrails (`guardrails/input.py`)**:
+   - Sanitizes and validates user travel queries before passing to the LangGraph workflow.
+   - Detects prompt injection signatures (`ignore previous instructions`, `reveal system prompt`, `show api key`, `bypass security`).
+   - Validates travel constraints: positive budget, realistic traveler count (1–50), valid 3-letter ISO currencies, logical date sequences (return >= departure), minimum 1-day trip duration.
+   - Automatically sanitizes PII (credit cards, phone numbers, passport numbers, email addresses).
+
+2. **Tool Guardrails (`guardrails/tools.py`)**:
+   - Centralized gateway intercepting all MCP tool requests before execution.
+   - Least-privilege role allowlists: each agent role can only invoke authorized capabilities.
+   - **Autonomous High-Risk Action Blocker**: Autonomous execution of `booking`, `payment`, `cancellation`, and `financial_transaction` is unconditionally blocked.
+   - Validates argument schemas (valid coordinates, bounded search queries, ISO dates, positive numbers).
+
+3. **Output Guardrails (`guardrails/output.py`)**:
+   - Enforces Pydantic schema validation on all deliverables (`PlannerResult`, `FlightOption`, `HotelOption`, `ActivityOption`, `BudgetSummary`, `ValidationResult`).
+   - Bounds checking: prohibits negative pricing, negative budget totals, or impossible durations.
+   - Fact & Source Safety: mandates authentic source attribution (`source`, `provider`, `retrieved_at`, `status`); prohibits fabricated citations.
+
+4. **Runtime Security & Audit Layer (`guardrails/security.py`)**:
+   - `SecretRedactor`: Regex engine continuously masking OpenAI/Tavily keys, JWTs, Bearer tokens, postgres passwords, and authorization headers in logs, exceptions, and traces.
+   - `PIISanitizer`: Masks personal identifiable information from stored messages and execution traces.
+   - `RateLimiter`: Thread-safe sliding-window rate limiter protecting API tools and user sessions.
+   - `WorkflowCircuitBreaker`: Enforces ceilings on steps, tool calls, search requests, and wall-clock execution time.
+   - `SecurityAuditor`: Structured audit logging of security incidents (`PROMPT_INJECTION_DETECTED`, `HIGH_RISK_ACTION_BLOCKED`, `TOOL_PERMISSION_DENIED`, etc.) with safe metadata.
+
 
 ---
 
