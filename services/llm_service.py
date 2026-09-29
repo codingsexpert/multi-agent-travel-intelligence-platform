@@ -335,63 +335,99 @@ class LLMService:
         """Check if live LLM credentials are configured and not in DEMO_MODE."""
         return not self.settings.demo_mode and self.settings.has_llm_config
 
-    def extract_plan(self, text: str) -> PlannerResult:
-        """Extract structured travel plan from natural language with graceful fallback.
+    def extract_plan(self, text: str, workflow_id: Optional[str] = None) -> PlannerResult:
+        """Extract structured travel plan from natural language with model routing and caching.
 
-        In DEMO_MODE or when no API key is present, routes to DemoPlannerExtractor.
-        In live mode with OpenAI credentials, uses LangChain ChatOpenAI with structured output.
+        1. Checks intelligent cache to prevent duplicate LLM calls on identical prompts.
+        2. In DEMO_MODE, routes deterministically to DemoPlannerExtractor.
+        3. In live mode, uses ModelRouter (TaskType.PLANNER -> COMPLEX tier) with fallback protection.
+        4. Records token usage and cost in CostTracker.
         """
+        clean_text = text.strip()
+        from utils.cache import intelligent_cache
+        from utils.model_router import model_router, TaskType, WorkflowBudgetExceededError
+        from utils.cost import cost_tracker
+
+        # 1. Duplicate Call Prevention / Intelligent Cache
+        cached_result = intelligent_cache.get("llm", "extract_plan", {"text": clean_text}, workflow_id=workflow_id)
+        if cached_result:
+            logger.info("[LLMService] Duplicate request intercepted: returning cached PlannerResult.")
+            if isinstance(cached_result, dict):
+                return PlannerResult.model_validate(cached_result)
+            return cached_result
+
+        # 2. DEMO_MODE Fallback
         if not self.is_live_configured:
             logger.info("[LLMService] DEMO_MODE active: using DemoPlannerExtractor.")
-            return DemoPlannerExtractor.extract(text)
+            result = DemoPlannerExtractor.extract(clean_text)
+            intelligent_cache.set("llm", "extract_plan", {"text": clean_text}, result)
+            return result
 
-        # Live LLM execution with retry protection
-        retries = 0
-        last_error: Optional[Exception] = None
+        # 3. Live Model Routing
+        def _invoke_model(model_name: str) -> PlannerResult:
+            from langchain_openai import ChatOpenAI
+            from langchain_core.messages import SystemMessage, HumanMessage
 
-        while retries <= MAX_PLANNER_RETRIES:
-            try:
-                from langchain_openai import ChatOpenAI
-                from langchain_core.messages import SystemMessage, HumanMessage
+            llm = ChatOpenAI(
+                model=model_name,
+                api_key=self.settings.openai_api_key.get_secret_value(),
+                temperature=0.0,
+            )
 
-                llm = ChatOpenAI(
-                    model=self.settings.primary_llm_model,
-                    api_key=self.settings.openai_api_key.get_secret_value(),
-                    temperature=0.0,
-                )
+            system_prompt = (
+                "You are an expert travel planner agent. Extract structured travel specifications from the user's request. "
+                "Analyze missing information (origin, destination, dates/duration, travelers, budget) and conflicting requirements. "
+                "Return ONLY valid structured data matching the PlannerResult schema. "
+                "Do NOT invent unstated requirements without recording safe assumptions."
+            )
 
-                system_prompt = (
-                    "You are an expert travel planner agent. Extract structured travel specifications from the user's request. "
-                    "Analyze missing information (origin, destination, dates/duration, travelers, budget) and conflicting requirements. "
-                    "Return ONLY valid structured data matching the PlannerResult schema. "
-                    "Do NOT invent unstated requirements without recording safe assumptions."
-                )
+            structured_llm = llm.with_structured_output(PlannerResult)
+            raw_res = structured_llm.invoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=clean_text),
+            ])
 
-                structured_llm = llm.with_structured_output(PlannerResult)
-                result = structured_llm.invoke([
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=text),
-                ])
+            # Rough token attribution for tracking
+            in_tokens = len(system_prompt.split()) + len(clean_text.split()) * 2
+            out_tokens = 300
+            cost_tracker.record_usage(
+                model_name=model_name,
+                input_tokens=in_tokens,
+                output_tokens=out_tokens,
+                agent_name="planner",
+                workflow_id=workflow_id,
+                task_type="planner",
+                success=True,
+            )
 
-                if isinstance(result, PlannerResult):
-                    # Deterministic post-validation
-                    self._validate_result_deterministically(result)
-                    return result
+            if isinstance(raw_res, PlannerResult):
+                self._validate_result_deterministically(raw_res)
+                return raw_res
 
-                # If returned dict, validate with Pydantic
-                parsed = PlannerResult.model_validate(result)
-                self._validate_result_deterministically(parsed)
-                return parsed
+            parsed = PlannerResult.model_validate(raw_res)
+            self._validate_result_deterministically(parsed)
+            return parsed
 
-            except Exception as e:
-                retries += 1
-                last_error = e
-                logger.warning(f"[LLMService] Planner extraction attempt {retries} failed: {str(e)}")
-
-        logger.error(f"[LLMService] All {MAX_PLANNER_RETRIES} LLM retries exhausted: {last_error}. Falling back to DemoPlannerExtractor.")
-        fallback = DemoPlannerExtractor.extract(text)
-        fallback.warnings.append(f"Live LLM parsing failed after retries ({str(last_error)}). Deterministic extractor used as fallback.")
-        return fallback
+        try:
+            plan_result = model_router.execute_with_routing(
+                task_type=TaskType.PLANNER,
+                executable_fn=_invoke_model,
+                agent_name="planner",
+                workflow_id=workflow_id,
+                max_retries=MAX_PLANNER_RETRIES,
+            )
+            intelligent_cache.set("llm", "extract_plan", {"text": clean_text}, plan_result)
+            return plan_result
+        except WorkflowBudgetExceededError as wbe:
+            logger.warning(f"[LLMService] Workflow budget exceeded: {wbe}. Using deterministic fallback.")
+            fallback = DemoPlannerExtractor.extract(clean_text)
+            fallback.warnings.append(f"Workflow cost ceiling reached ({str(wbe)}). Deterministic extractor used to preserve budget.")
+            return fallback
+        except Exception as exc:
+            logger.error(f"[LLMService] Live model routing failed: {exc}. Engaging DemoPlannerExtractor fallback.")
+            fallback = DemoPlannerExtractor.extract(clean_text)
+            fallback.warnings.append(f"Live model execution failed ({str(exc)}). Deterministic extractor used as fallback.")
+            return fallback
 
     @staticmethod
     def _validate_result_deterministically(result: PlannerResult) -> None:

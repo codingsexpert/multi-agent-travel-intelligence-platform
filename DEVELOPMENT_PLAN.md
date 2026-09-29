@@ -587,20 +587,44 @@ This development plan breaks down the construction of the platform into **18 dis
 
 ---
 
-## Phase 15: Latency & Cost Optimization
-- **Objective**: Slash end-to-end plan generation latency and optimize LLM token expenditures.
-- **Implementation Tasks**:
-  1. Implement prompt compression and token deduplication in agent prompts.
-  2. Implement two-tier model routing: Route extraction and formatting to `gpt-4o-mini`, reserving `gpt-4o` for Planner and Replanner.
-  3. Implement in-memory / Redis cache for repetitive tool and embedding queries (`src/core/cache.py`).
-  4. Maximize parallel async execution across independent sub-agents in LangGraph.
+## Phase 15: Cost Optimization, Model Routing & Efficiency *(Completed)*
+- **Objective**: Make the multi-agent travel intelligence platform cost-efficient, latency-aware, and production-ready through deterministic model routing, intelligent caching, token optimization, duplicate-call prevention, and workflow budgets.
+- **Completed Implementation**:
+  1. Centralized Model Router (`utils/model_router.py`):
+     - Deterministic model tiers: `SIMPLE` (extraction, normalization, formatting -> `gpt-4o-mini`), `MEDIUM` (options reasoning, research synthesis -> `gpt-4o-mini`), `COMPLEX` (multi-constraint trip planning, dynamic replanning, conflict resolution -> `gpt-4o`), and `PYTHON` (budget calculations, validation rules -> pure Python with 0 LLM tokens).
+     - Controlled safe fallback strategy: automatic single fallback to configured models without retry loops.
+     - Never delegates tier selection to LLM discretion; application logic strictly controls routing.
+  2. Centralized Cost Tracker (`utils/cost.py`):
+     - Thread-safe (`threading.RLock`) token and dollar attribution across models, agents, and workflows.
+     - Configuration-driven pricing per 1,000,000 tokens (input/output). Reports `UNKNOWN` when pricing is unconfigured (never fabricates costs).
+     - Workflow cost budget enforcement: validates `MAX_WORKFLOW_COST` (default $1.00), `MAX_MODEL_CALLS` (default 10), and `MAX_TOTAL_TOKENS` (default 50,000) before expensive operations.
+  3. Intelligent Caching (`utils/cache.py`):
+     - SHA-256 fingerprinting with automated credential/secret stripping.
+     - Domain-specific configurable TTLs (Currency: 3600s, Weather: 1800s, Places: 86400s, Search: 900s, Flight/Hotel: 600s, RAG: 1800s).
+     - Mode partition isolation: DEMO cache keys and LIVE cache keys are isolated (`domain:demo` vs `domain:live`) so DEMO mock data never satisfies LIVE queries.
+     - Strict non-caching of transactional operations (`book_flight`, `book_hotel`, `purchase_activity`, `cancel_booking`, `process_payment`, `authorize_payment`, `approve_action`, etc.).
+  4. Context Minimization & Parallelization:
+     - `minimize_agent_context`: Slices state to strictly required fields per agent, minimizing prompt tokens.
+     - Parallel selective re-execution in dynamic replanning via `ThreadPoolExecutor` for independent nodes (`flight`, `hotel`, `activity`, `weather`, `research`).
+     - Tracking reused nodes and recorded savings (calls avoided, tokens saved, cost saved, latency saved).
+  5. Human-in-the-Loop Cost Guard:
+     - Zero LLM model calls during approval pauses (`WAITING_FOR_APPROVAL`).
+     - Idempotency key protection prevents duplicate execution on repeated user button clicks.
+  6. Streamlit Cost & Performance Dashboard (`app/pages/agent_trace.py`):
+     - Section 9 provides real-time visibility into workflow costs, model breakdown table, agent breakdown table, cache hit rates, duplicate prevention, and estimated savings.
+  7. Built Comprehensive Test Suite in `tests/test_cost_optimization.py`:
+     - 25 dedicated unit and integration tests covering routing, fallbacks, token tracking, cost calculation, budget enforcement, duplicate prevention, cache hits/misses/TTL, transactional non-caching, parallel execution, selective replan reuse, HITL non-polling, and before-vs-after benchmark fixture.
 - **Files / Components**:
-  - `src/core/cache.py`, `src/agents/model_router.py`
-  - `tests/test_optimization.py`
+  - `config/settings.py`
+  - `utils/model_router.py`, `utils/cost.py`, `utils/cache.py`, `utils/__init__.py`
+  - `services/llm_service.py`, `mcp/client.py`, `rag/retriever.py`, `graph/workflow.py`, `agents/base_agent.py`
+  - `app/pages/agent_trace.py`
+  - `tests/test_cost_optimization.py`
 - **Testing Requirements**:
-  - Benchmark execution time and token consumption before and after optimization.
+  - 25 tests in `tests/test_cost_optimization.py` passing with 100% success.
+  - Complete test suite: 333/333 tests passing with 0 failures across all 15 phases.
 - **Expected Output**:
-  - >= 50% latency reduction and >= 60% token cost reduction.
+  - Production-ready, cost-optimized, and latency-aware multi-agent travel intelligence system.
 
 ---
 

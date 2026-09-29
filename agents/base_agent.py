@@ -2,7 +2,7 @@
 
 import time
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, Callable, Tuple
+from typing import Dict, Any, List, Optional, Callable, Tuple
 from utils.logger import logger
 
 
@@ -78,4 +78,23 @@ def execute_agent_safely(
             "warnings": [f"Specialized agent '{agent_name}' encountered an error: {safe_err}."],
         }
         return fallback_delta, SecretRedactor.redact_dict(run_record)
+
+
+AGENT_CONTEXT_REQUIREMENTS: Dict[str, List[str]] = {
+    "weather": ["destination", "start_date", "end_date", "duration", "is_demo", "trip_id"],
+    "flight": ["origin", "destination", "start_date", "end_date", "travelers", "flight_budget", "currency", "is_demo", "trip_id"],
+    "hotel": ["destination", "start_date", "end_date", "travelers", "hotel_budget", "currency", "is_demo", "trip_id"],
+    "activity": ["destination", "start_date", "end_date", "travelers", "activity_budget", "currency", "is_demo", "trip_id"],
+    "research": ["destination", "original_request", "is_demo", "trip_id"],
+    "budget_engine": ["budget", "flight_options", "hotel_options", "activity_options", "currency", "is_demo", "trip_id"],
+    "validator": ["itinerary", "budget_breakdown", "flight_options", "hotel_options", "activity_options", "is_demo", "trip_id"],
+}
+
+
+def minimize_agent_context(agent_name: str, state: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract strictly necessary state fields for an agent to minimize context size and token overhead."""
+    allowed_keys = AGENT_CONTEXT_REQUIREMENTS.get(agent_name)
+    if not allowed_keys:
+        return dict(state)
+    return {k: state[k] for k in allowed_keys if k in state}
 

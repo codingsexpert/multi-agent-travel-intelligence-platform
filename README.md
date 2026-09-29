@@ -660,6 +660,35 @@ Phase 14 delivers an enterprise-grade distributed tracing and observability laye
 
 ---
 
+## 💰 Phase 15: Cost Optimization, Model Routing & Efficiency
+
+Phase 15 guarantees enterprise-grade cost efficiency and latency awareness through the core principle: **"Use the cheapest reliable mechanism for every task."**
+
+### Efficiency Architecture:
+1. **Deterministic Model Router (`utils/model_router.py`)**:
+   - `MODEL_SIMPLE` (`gpt-4o-mini`): Extraction, normalization, formatting, clarification.
+   - `MODEL_MEDIUM` (`gpt-4o-mini`): Options reasoning, research synthesis, trade-offs.
+   - `MODEL_COMPLEX` (`gpt-4o`): Multi-constraint trip planning, dynamic replanning, conflict resolution.
+   - `PYTHON` (Pure deterministic): Financial budget engine and temporal validator ($0.00 / 0 LLM tokens).
+2. **Safe Fallback Strategy**:
+   - Primary model failures safely step down to configured fallback models with a 1-attempt ceiling, strictly preventing runaway loops.
+3. **Centralized Cost Tracker (`utils/cost.py`)**:
+   - Configuration-driven per-model token pricing with thread-safe (`threading.RLock`) accounting.
+   - Displays `"UNKNOWN"` for unpriced models rather than fabricating figures.
+   - Enforces workflow budgets (`MAX_WORKFLOW_COST`, `MAX_MODEL_CALLS`, `MAX_TOTAL_TOKENS`).
+4. **Intelligent Caching with Mode Partitioning (`utils/cache.py`)**:
+   - Normalized SHA-256 fingerprinting prevents duplicate LLM, MCP, and search requests.
+   - Domain-specific TTLs: Currency (3600s), Weather (1800s), Places (86400s), Search (900s), Flight/Hotel (600s), RAG (1800s).
+   - Strict namespace isolation between DEMO and LIVE cache keys (`domain:demo` vs `domain:live`).
+   - Transactional operations (`book_flight`, `book_hotel`, `purchase_activity`, `cancel_booking`, `process_payment`, `authorize_payment`, approvals) are strictly prohibited from being cached.
+5. **Context Minimization & Replan Reuse**:
+   - Agents receive only necessary state fields via `minimize_agent_context`.
+   - Independent affected nodes execute in parallel via `ThreadPoolExecutor` during dynamic replanning, while reusing unaffected nodes and tracking savings (calls avoided, tokens saved, cost saved, latency saved).
+6. **Streamlit Cost & Performance Dashboard (`app/pages/agent_trace.py`)**:
+   - Real-time workflow cost metrics, model breakdown, agent breakdown, cache hit rates, duplicate prevention stats, and estimated savings.
+
+---
+
 ## 🛡️ Security & Privacy Principles
 
 1. **Zero Secret Leaks**: Secrets and service keys are never committed to version control.

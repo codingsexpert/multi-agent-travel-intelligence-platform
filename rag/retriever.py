@@ -17,6 +17,7 @@ from rag.embeddings import BaseEmbeddingService, get_embedding_service
 from rag.ingestion import DocumentIngestionPipeline
 from services.supabase_service import SupabaseService, supabase_service
 from utils.logger import logger
+from utils.cache import intelligent_cache
 
 
 SEED_DATA_DIR = Path(__file__).parent / "seed_data"
@@ -115,6 +116,15 @@ class TravelKnowledgeRetriever:
                 mode="DEMO" if self.is_demo else "LIVE",
             )
 
+        # 0. Intelligent Cache Lookup
+        cached_result = intelligent_cache.get(
+            domain="rag",
+            operation="retrieve",
+            params=query.model_dump(),
+        )
+        if cached_result is not None:
+            return cached_result
+
         # 1. Attempt live Supabase pgvector retrieval if live mode is enabled
         result = None
         if not self.is_demo:
@@ -128,6 +138,12 @@ class TravelKnowledgeRetriever:
             result = self._retrieve_in_memory(query)
 
         result.latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        intelligent_cache.set(
+            domain="rag",
+            operation="retrieve",
+            params=query.model_dump(),
+            value=result,
+        )
 
         try:
             from services.observability_service import observability_service

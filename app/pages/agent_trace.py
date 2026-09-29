@@ -485,3 +485,88 @@ def render_agent_trace_page() -> None:
 
         st.metric("Confirmed Transactions", f"{confirmed_count} (DEMO / MOCK)")
         st.metric("Proposals Monitored", str(proposals_count))
+
+    # 9. COST OPTIMIZATION, MODEL ROUTING & EFFICIENCY (Phase 15)
+    st.markdown("---")
+    st.markdown("### 💰 Cost Optimization, Model Routing & Efficiency (Phase 15)")
+
+    try:
+        from utils.cost import cost_tracker
+        from utils.cache import intelligent_cache
+        cost_summary = cost_tracker.get_workflow_summary()
+        efficiency = cost_tracker.get_efficiency_metrics()
+        cache_stats = intelligent_cache.get_stats()
+    except Exception:
+        cost_summary = {}
+        efficiency = {}
+        cache_stats = {}
+
+    st.markdown("#### 1. Workflow Cost & Utilization")
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Total Model Calls", str(cost_summary.get("total_model_calls", 0)))
+        st.metric("MCP Calls", str(telemetry_summary.get("mcp_calls", 0)))
+    with c2:
+        st.metric("Total Tokens", f"{cost_summary.get('total_tokens', 0):,}")
+        st.metric("Web Searches", str(telemetry_summary.get("search_calls", 0)))
+    with c3:
+        est_cost = cost_summary.get("estimated_cost_formatted", "UNKNOWN")
+        st.metric("Estimated Cost", est_cost)
+        st.metric("RAG Retrievals", str(telemetry_summary.get("rag_calls", 0)))
+    with c4:
+        st.metric("Cache Hits / Misses", f"{cache_stats.get('hits', 0)} / {cache_stats.get('misses', 0)}")
+        st.metric("Workflow Latency", f"{telemetry_summary.get('duration_seconds', 0.0):.2f}s")
+
+    # Model Breakdown Table
+    st.markdown("#### 2. Model Breakdown")
+    model_breakdown = cost_summary.get("model_breakdown", {})
+    if not model_breakdown:
+        st.info("ℹ️ No model calls recorded in current session. Models will route deterministically by task complexity.")
+    else:
+        m_rows = []
+        for m_name, m_data in model_breakdown.items():
+            c_val = f"${m_data['cost']:.5f}" if m_data.get("cost") is not None else "UNKNOWN"
+            m_rows.append({
+                "Model": m_name,
+                "Provider": m_data.get("provider", "UNKNOWN"),
+                "Calls": m_data.get("calls", 0),
+                "Tokens": f"{m_data.get('total_tokens', 0):,}",
+                "Avg Latency": f"{m_data.get('latency_ms', 0.0):.1f}ms",
+                "Estimated Cost": c_val,
+                "Fallbacks": m_data.get("fallbacks", 0),
+            })
+        st.table(m_rows)
+
+    # Agent Breakdown Table
+    st.markdown("#### 3. Agent Cost & Routing Breakdown")
+    agent_breakdown = cost_summary.get("agent_breakdown", {})
+    if not agent_breakdown:
+        st.info("ℹ️ No agent cost records available yet.")
+    else:
+        a_rows = []
+        for a_name, a_data in agent_breakdown.items():
+            c_val = f"${a_data['cost']:.5f}" if a_data.get("cost") is not None else "UNKNOWN"
+            a_rows.append({
+                "Agent": a_name.capitalize(),
+                "Calls": a_data.get("calls", 0),
+                "Tokens": f"{a_data.get('tokens', 0):,}",
+                "Avg Latency": f"{a_data.get('latency_ms', 0.0):.1f}ms",
+                "Estimated Cost": c_val,
+            })
+        st.table(a_rows)
+
+    # Efficiency & Savings
+    st.markdown("#### 4. Efficiency & Duplicate Prevention")
+    e1, e2, e3 = st.columns(3)
+    hit_rate = cache_stats.get("hit_rate_pct", 0.0)
+    with e1:
+        st.metric("Cache Hit Rate", f"{hit_rate:.1f}%")
+        st.metric("Duplicate Calls Prevented", str(cache_stats.get("duplicates_prevented", 0)))
+    with e2:
+        reused_nodes = efficiency.get("nodes_reused_during_replanning", 0)
+        st.metric("Nodes Reused (Replan)", str(reused_nodes))
+        st.metric("Estimated Tokens Saved", f"{efficiency.get('tokens_saved', 0):,}")
+    with e3:
+        saved_cost = efficiency.get("cost_saved", 0.0)
+        st.metric("Parallel Operations", "ENABLED (Selective Replan & Specialized Fan-Out)")
+        st.metric("Estimated Cost Saved", f"${saved_cost:.4f}" if saved_cost > 0 else "$0.0000")

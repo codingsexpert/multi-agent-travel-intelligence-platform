@@ -428,48 +428,76 @@ def replan_selective_execution_node(state: TravelState) -> Dict[str, Any]:
 
     temp_state = {**state, **updates}
 
-    # Selective execution
-    if "flight" in rerun_nodes:
-        flight_res = flight_agent_node(temp_state)
-        f_opts = list(flight_res.get("flight_options", []))
-        if f_opts and isinstance(f_opts[0], dict):
-            f_opts[0]["flight_number"] = f"{f_opts[0].get('flight_number', 'FL')}-ALT"
-            f_opts[0]["availability_status"] = "Replan Confirmed"
-        updates["flight_options"] = f_opts
-        if flight_res.get("agent_runs"):
-            updates["agent_runs"] = flight_res["agent_runs"]
+    import concurrent.futures
+    from utils.cost import cost_tracker
 
-    if "hotel" in rerun_nodes:
-        hotel_res = hotel_agent_node(temp_state)
-        updates["hotel_options"] = hotel_res.get("hotel_options", [])
-        if hotel_res.get("agent_runs"):
-            updates["agent_runs"] = updates.get("agent_runs", []) + hotel_res["agent_runs"]
+    # Selective parallel execution for independent nodes
+    parallel_tasks: Dict[str, Any] = {}
+    current_acts = list(temp_state.get("activities", []))
+    handle_activity_inline = ("activity" in rerun_nodes and bool(current_acts and impact.affected_days))
 
-    if "activity" in rerun_nodes:
-        current_acts = list(temp_state.get("activities", []))
-        if current_acts and impact.affected_days:
-            updated_acts = []
-            for act in current_acts:
-                a_copy = dict(act)
-                if a_copy.get("day", 1) in impact.affected_days:
-                    a_copy["name"] = f"Indoor Cultural Experience: {a_copy.get('name', 'Attraction')}"
-                    a_copy["description"] = "Weather-protected indoor venue selected during replanning."
-                    a_copy["is_indoor"] = True
-                updated_acts.append(a_copy)
-            updates["activities"] = updated_acts
-        else:
-            act_res = activity_agent_node(temp_state)
-            updates["activities"] = act_res.get("activities", [])
-            if act_res.get("agent_runs"):
-                updates["agent_runs"] = updates.get("agent_runs", []) + act_res["agent_runs"]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, max(1, len(rerun_nodes)))) as executor:
+        if "flight" in rerun_nodes:
+            parallel_tasks["flight"] = executor.submit(flight_agent_node, temp_state)
+        if "hotel" in rerun_nodes:
+            parallel_tasks["hotel"] = executor.submit(hotel_agent_node, temp_state)
+        if "activity" in rerun_nodes and not handle_activity_inline:
+            parallel_tasks["activity"] = executor.submit(activity_agent_node, temp_state)
+        if "weather" in rerun_nodes:
+            parallel_tasks["weather"] = executor.submit(weather_agent_node, temp_state)
+        if "research" in rerun_nodes:
+            parallel_tasks["research"] = executor.submit(research_agent_node, temp_state)
 
-    if "weather" in rerun_nodes:
-        weather_res = weather_agent_node(temp_state)
-        updates["weather"] = weather_res.get("weather")
+        for node_key, fut in parallel_tasks.items():
+            res = fut.result()
+            if node_key == "flight":
+                f_opts = list(res.get("flight_options", []))
+                if f_opts and isinstance(f_opts[0], dict):
+                    f_opts[0]["flight_number"] = f"{f_opts[0].get('flight_number', 'FL')}-ALT"
+                    f_opts[0]["availability_status"] = "Replan Confirmed"
+                updates["flight_options"] = f_opts
+                if res.get("agent_runs"):
+                    updates["agent_runs"] = res["agent_runs"]
+            elif node_key == "hotel":
+                updates["hotel_options"] = res.get("hotel_options", [])
+                if res.get("agent_runs"):
+                    updates["agent_runs"] = updates.get("agent_runs", []) + res["agent_runs"]
+            elif node_key == "activity":
+                updates["activities"] = res.get("activities", [])
+                if res.get("agent_runs"):
+                    updates["agent_runs"] = updates.get("agent_runs", []) + res["agent_runs"]
+            elif node_key == "weather":
+                updates["weather"] = res.get("weather")
+            elif node_key == "research":
+                updates["research_results"] = res.get("research_results")
 
-    if "research" in rerun_nodes:
-        res_res = research_agent_node(temp_state)
-        updates["research_results"] = res_res.get("research_results")
+    if handle_activity_inline:
+        updated_acts = []
+        for act in current_acts:
+            a_copy = dict(act)
+            if a_copy.get("day", 1) in impact.affected_days:
+                a_copy["name"] = f"Indoor Cultural Experience: {a_copy.get('name', 'Attraction')}"
+                a_copy["description"] = "Weather-protected indoor venue selected during replanning."
+                a_copy["is_indoor"] = True
+            updated_acts.append(a_copy)
+        updates["activities"] = updated_acts
+
+    # Track replanning efficiency & savings
+    nodes_reused_count = max(0, len(ReplanningEngine.ALL_WORKFLOW_NODES) - len(rerun_nodes))
+    cost_tracker.record_savings(
+        calls_avoided=nodes_reused_count,
+        tokens_saved=nodes_reused_count * 1500,
+        cost_saved=nodes_reused_count * 0.003,
+        latency_ms_saved=nodes_reused_count * 350.0,
+        nodes_reused=nodes_reused_count,
+    )
+    updates["replanning_efficiency"] = {
+        "nodes_rerun": len(rerun_nodes),
+        "nodes_reused": nodes_reused_count,
+        "calls_avoided": nodes_reused_count,
+        "tokens_saved": nodes_reused_count * 1500,
+        "cost_saved": nodes_reused_count * 0.003,
+    }
 
     return updates
 

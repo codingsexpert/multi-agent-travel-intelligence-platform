@@ -29,10 +29,67 @@ class Settings(BaseSettings):
         validation_alias="supabase_key",
     )
 
-    # LLM Provider Configuration (Optional in DEMO_MODE)
+    # LLM Provider Configuration & Phase 15 Model Routing
     openai_api_key: Optional[SecretStr] = Field(default=None, description="OpenAI API Key for reasoning models")
     primary_llm_model: str = Field(default="gpt-4o", description="Primary model for planning and reasoning")
     fast_llm_model: str = Field(default="gpt-4o-mini", description="Fast model for extraction and summarization")
+
+    # Phase 15 Model Router Tiers
+    model_simple: str = Field(
+        default="gpt-4o-mini",
+        description="Lightweight model for extraction, classification, and normalization",
+        validation_alias=AliasChoices("model_simple", "fast_llm_model"),
+    )
+    model_medium: str = Field(
+        default="gpt-4o-mini",
+        description="Medium model for research synthesis, option selection, and explanations",
+        validation_alias=AliasChoices("model_medium"),
+    )
+    model_complex: str = Field(
+        default="gpt-4o",
+        description="High-capacity model for multi-constraint planning, dynamic replanning, and conflict resolution",
+        validation_alias=AliasChoices("model_complex", "primary_llm_model"),
+    )
+    model_simple_fallback: str = Field(
+        default="gpt-4o-mini",
+        description="Fallback model if simple tier model encounters an error",
+        validation_alias=AliasChoices("model_simple_fallback"),
+    )
+    model_medium_fallback: str = Field(
+        default="gpt-4o",
+        description="Fallback model if medium tier model encounters an error",
+        validation_alias=AliasChoices("model_medium_fallback"),
+    )
+    model_complex_fallback: str = Field(
+        default="gpt-4o-mini",
+        description="Fallback model if complex tier model encounters an error",
+        validation_alias=AliasChoices("model_complex_fallback"),
+    )
+
+    # Phase 15 Workflow Cost Budget Limits
+    max_workflow_cost: float = Field(
+        default=1.00,
+        description="Hard cost ceiling in USD per workflow run (e.g. 1.00 USD)",
+        validation_alias=AliasChoices("max_workflow_cost"),
+    )
+    max_model_calls: int = Field(
+        default=10,
+        description="Maximum LLM calls permitted per workflow run",
+        validation_alias=AliasChoices("max_model_calls"),
+    )
+    max_total_tokens: int = Field(
+        default=50000,
+        description="Maximum tokens consumed per workflow run",
+        validation_alias=AliasChoices("max_total_tokens"),
+    )
+
+    # Phase 15 Intelligent Cache TTL Configuration (in seconds)
+    cache_ttl_currency: int = Field(default=3600, description="Currency exchange rate cache TTL in seconds")
+    cache_ttl_weather: int = Field(default=1800, description="Weather forecast cache TTL in seconds")
+    cache_ttl_places: int = Field(default=86400, description="Place / Geocoding metadata cache TTL in seconds")
+    cache_ttl_search: int = Field(default=900, description="Web search result cache TTL in seconds")
+    cache_ttl_flight_hotel: int = Field(default=600, description="Flight and hotel search cache TTL in seconds")
+    cache_ttl_rag: int = Field(default=1800, description="RAG query result cache TTL in seconds")
 
     # LangSmith Observability Configuration (Optional)
     langsmith_api_key: Optional[SecretStr] = Field(

@@ -27,6 +27,7 @@ from mcp.providers.base import (
     reset_execution_mode,
 )
 from utils.logger import logger
+from utils.cache import intelligent_cache
 
 
 class MCPClient:
@@ -195,6 +196,33 @@ class MCPClient:
                 demo_data=is_demo,
             )
 
+        # 3.5 Intelligent Cache Lookup (Duplicate call prevention & cost/latency optimization)
+        cache_domain = f"{agent_name}:{'demo' if is_demo else 'live'}"
+        cached_result = intelligent_cache.get(domain=cache_domain, operation=tool_name, params=arguments)
+        if cached_result is not None:
+            duration_ms = round((time.time() - start_time) * 1000, 2)
+            cls._record_call(
+                exec_id=exec_id,
+                tool_name=tool_name,
+                agent_name=agent_name,
+                status=ToolExecutionStatus.SUCCESS,
+                duration_ms=duration_ms,
+                safe_args=safe_args,
+                retries=0,
+                mode=cached_result.mode if isinstance(cached_result, MCPToolResult) else ("DEMO" if is_demo else "LIVE"),
+                provider=getattr(cached_result, "provider", None) if isinstance(cached_result, MCPToolResult) else None,
+            )
+            if isinstance(cached_result, MCPToolResult):
+                return cached_result
+            return MCPToolResult(
+                success=True,
+                tool_name=tool_name,
+                data=cached_result,
+                latency_ms=duration_ms,
+                mode="DEMO" if is_demo else "LIVE",
+                demo_data=is_demo,
+            )
+
         # 4. Tool Execution with Retry Policy
         last_exception: Optional[Exception] = None
         max_attempts = descriptor.max_retries + 1
@@ -219,7 +247,7 @@ class MCPClient:
                     provider=provider_name,
                 )
 
-                return MCPToolResult(
+                result_obj = MCPToolResult(
                     success=True,
                     tool_name=tool_name,
                     data=output_model.model_dump(),
@@ -228,6 +256,14 @@ class MCPClient:
                     provider=provider_name,
                     demo_data=getattr(output_model, "demo_data", is_demo),
                 )
+                # Store in cache if non-transactional
+                intelligent_cache.set(
+                    domain=cache_domain,
+                    operation=tool_name,
+                    params=arguments,
+                    value=result_obj,
+                )
+                return result_obj
             except TimeoutError as te:
                 last_exception = te
                 retries_used = attempt

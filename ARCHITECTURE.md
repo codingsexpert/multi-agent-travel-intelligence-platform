@@ -1068,3 +1068,51 @@ The **Agent Trace & Telemetry** page (`app/pages/agent_trace.py`) provides:
 2. **Graceful Fallback to DEMO_MODE**: If an external provider (e.g., Amadeus or OpenWeather) returns 5xx or rate limit errors, the system seamlessly falls back to cached/mock data and notifies the user with a warning banner.
 3. **Graph Circuit Breakers**: `MAX_GRAPH_STEPS = 30` prevents infinite recursion in replanning loops.
 4. **Data Redundancy**: Itineraries are persisted at each stage, ensuring a transient browser refresh never loses trip progress.
+
+---
+
+## 15. Cost Optimization, Model Routing & Efficiency Architecture
+
+The platform enforces deterministic efficiency and cost minimization across all 15 operational layers, guided by the foundational principle: **"Use the cheapest reliable mechanism for every task."**
+
+### 15.1 Operational Execution Matrix
+| Operational Need | Primary Mechanism | Cost / Token Overhead | Rationale |
+|---|---|---|---|
+| **Deterministic Calculations** | Pure Python (`BudgetEngine`) | $0.00 / 0 Tokens | Arithmetic & budget utilization must never use LLMs |
+| **Validation Rules** | Pure Python (`ValidatorEngine`) | $0.00 / 0 Tokens | Logistics & temporal feasibility are exact rule checks |
+| **Simple Extraction / Format** | `MODEL_SIMPLE` (`gpt-4o-mini`) | $0.15/$0.60 per 1M | High-speed, lightweight classification & normalization |
+| **Options Reasoning & Synthesis** | `MODEL_MEDIUM` (`gpt-4o-mini`) | $0.15/$0.60 per 1M | Cost-effective constraint trade-offs & option analysis |
+| **Multi-Constraint Planning** | `MODEL_COMPLEX` (`gpt-4o`) | $5.00/$15.00 per 1M | Frontier reasoning for strategy, decomposition & conflict resolution |
+| **Stable Knowledge & Norms** | Curated RAG (`pgvector`) | Micro-cents / Embedding | Verified cultural etiquette without web latency |
+| **Fresh News & Advisories** | Web Search MCP (`Tavily`) | Provider API credits | Current disruptions, strikes, and seasonal events |
+| **External Systems** | MCP Client Gateway | Zero LLM generation | Typed, validated capability boundary |
+| **Repeated Queries** | `IntelligentCache` (SHA-256) | $0.00 / 0ms | Instant reuse of identical idempotent queries |
+
+### 15.2 Centralized Model Router (`utils/model_router.py`)
+- **Deterministic Application Control**: Application logic selects model tiers via `ROUTING_POLICY`. The LLM never decides its own tier.
+- **Provider Decoupling**: Resolves models from environment settings (`MODEL_SIMPLE`, `MODEL_MEDIUM`, `MODEL_COMPLEX`).
+- **Bounded Fallback**: If the primary model fails (timeout, rate limit), safely switches to the configured fallback with a 1-attempt ceiling, preventing infinite fallback loops.
+
+### 15.3 Centralized Cost Tracking & Budget Guard (`utils/cost.py`)
+- **Thread-Safe Accounting**: Uses `threading.RLock` to track input/output tokens, latencies, and estimated dollar costs across models, agents, and workflows.
+- **Zero Hallucinated Cost**: Accurately computes costs using official published pricing per 1M tokens. If pricing is unconfigured, reports `"UNKNOWN"`.
+- **Pre-Execution Budget Check**: `check_budget()` enforces `MAX_WORKFLOW_COST` (default $1.00), `MAX_MODEL_CALLS` (default 10), and `MAX_TOTAL_TOKENS` (default 50,000). Runaway workloads raise `WorkflowBudgetExceededError`, halting execution while preserving valid partial state.
+
+### 15.4 Intelligent Caching & Security Partitioning (`utils/cache.py`)
+- **Normalized SHA-256 Fingerprinting**: Eliminates duplicate calls across LLMs, MCP tools, and web searches by serializing normalized parameters with sensitive keys stripped.
+- **Domain-Specific TTLs**:
+  - Currency Exchange: 3,600 seconds
+  - Weather Forecasts: 1,800 seconds
+  - Places / Maps Routing: 86,400 seconds
+  - Web & News Search: 900 seconds
+  - Flight & Hotel Discovery: 600 seconds
+  - RAG Semantic Retrieval: 1,800 seconds
+- **Strict Mode Partitioning**: Cache keys isolate DEMO and LIVE namespaces (`domain:demo` vs `domain:live`) guaranteeing mock data never answers live production queries.
+- **Hard Transactional Blocklist**: `TRANSACTIONAL_OPERATIONS` strictly prohibits caching of bookings, payments, cancellations, and approvals.
+
+### 15.5 Context Minimization & Parallel Graph Execution
+- **Context Slicing (`minimize_agent_context`)**: Slices state so agents receive only their required fields (e.g. Weather only gets destination/dates/duration, not hotel or flight options), reducing prompt token expenditure by up to 60%.
+- **Selective Parallel Execution**: Dynamic replanning executes independent affected nodes concurrently via `ThreadPoolExecutor`, while reusing unaffected nodes and recording saved calls, tokens, cost, and latency.
+
+### 15.6 Streamlit Cost & Performance Dashboard (`app/pages/agent_trace.py`)
+- **Section 9** exposes real-time cost, token utilization, model breakdown, agent breakdown, cache hit rates, duplicate prevention metrics, and replan reuse statistics.

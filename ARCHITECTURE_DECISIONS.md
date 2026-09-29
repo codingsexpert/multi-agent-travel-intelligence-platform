@@ -572,6 +572,70 @@ Operating a production multi-agent system comprising LangGraph state transitions
      - TRACE DETAILS & TIMELINE: sanitized, chronological breakdown of spans.
      - LangSmith run link or safe "Tracing unavailable (Offline / Demo Mode)" indicator.
 
+---
+
+## ADR-22: Deterministic Model Routing, Intelligent Caching, Token Optimization, & Workflow Cost Controls
+
+### Context
+In multi-agent architectures, operational cost and latency are dominated by repetitive LLM invocations and redundant external network calls. Without disciplined controls:
+- Agents may invoke expensive frontier models (e.g., `gpt-4o`) for lightweight classification, entity extraction, or text formatting that cheaper models (e.g., `gpt-4o-mini`) can perform identically.
+- Re-executing workflows or polling external services triggers duplicate MCP requests, redundant web searches, and vector database queries.
+- Whole-graph restarts on minor disruptions waste computational budget and tokens on already-valid travel segments.
+- Runaway retries or recursive model fallbacks can lead to exponential token inflation and unexpected cloud bills.
+- Crucially, cost optimization must NEVER compromise security guardrails, row-level security, SSRF defenses, or human approval requirements.
+
+### Decision
+1. **The Cheapest Reliable Mechanism Principle**:
+   - Deterministic calculations & validations → Pure Python (zero LLM tokens).
+   - Simple extraction, classification, and normalization → `MODEL_SIMPLE` (`gpt-4o-mini`).
+   - Options reasoning and research synthesis → `MODEL_MEDIUM` (`gpt-4o-mini`).
+   - Multi-constraint planning, dynamic replanning, and conflict resolution → `MODEL_COMPLEX` (`gpt-4o`).
+   - Stable domain knowledge → Curated RAG vector store (`pgvector`).
+   - Fresh news & advisories → Web Search MCP (`Tavily`).
+   - External systems → MCP client gateway with permission verification.
+   - Repeated requests → Normalized SHA-256 Intelligent Cache.
+
+2. **Centralized Model Router (`utils/model_router.py`)**:
+   - Application logic deterministically decides model tiers via `ROUTING_POLICY`.
+   - The LLM is NEVER permitted to choose its own model tier.
+   - Resolves provider model names from environment configuration (`MODEL_SIMPLE`, `MODEL_MEDIUM`, `MODEL_COMPLEX`).
+
+3. **Safe Controlled Fallback Strategy**:
+   - If a preferred model fails (timeout, rate limit, provider outage), the router safely switches to the configured fallback model (`model_medium_fallback`, `model_complex_fallback`).
+   - Bounded to a maximum of 1 fallback attempt with fallback count attribution, preventing infinite retry loops.
+
+4. **Centralized Cost Tracker (`utils/cost.py`)**:
+   - Thread-safe (`threading.RLock`) token and dollar attribution across models, agents, and workflows.
+   - Calculates exact costs based on configured input and output prices per 1,000,000 tokens.
+   - Reports `"UNKNOWN"` when pricing is unconfigured; strictly forbids fabricating costs.
+   - Exposes `get_workflow_summary()`, `get_model_breakdown()`, `get_agent_breakdown()`, and `get_efficiency_metrics()`.
+
+5. **Configurable Workflow Cost Budgets**:
+   - Enforces configurable ceilings: `MAX_WORKFLOW_COST` (default $1.00), `MAX_MODEL_CALLS` (default 10), and `MAX_TOTAL_TOKENS` (default 50,000).
+   - Before executing an expensive model call, `check_budget()` verifies constraints and halts runaway execution with `WorkflowBudgetExceededError`, preserving valid partial state.
+
+6. **Agent Context Minimization (`agents/base_agent.py`)**:
+   - Implemented `minimize_agent_context(agent_name, state)` ensuring agents only receive their required slice of state (e.g. Weather only gets destination/dates/duration, not flight or hotel details), reducing token footprint and latency.
+
+7. **Intelligent Caching with Mode Partitioning (`utils/cache.py`)**:
+   - Stores idempotent responses keyed by domain, operation, and secret-scrubbed JSON parameter fingerprints (`hashlib.sha256`).
+   - Enforces domain-specific configurable TTLs (Currency: 3600s, Weather: 1800s, Places: 86400s, Search: 900s, Flight/Hotel: 600s, RAG: 1800s).
+   - Strict mode partition: DEMO cache keys and LIVE cache keys are isolated (`domain:demo` vs `domain:live`) ensuring DEMO mock data never satisfies LIVE queries.
+
+8. **Strict Non-Caching of Transactional Operations**:
+   - Operations classified as transactional (`book_flight`, `book_hotel`, `purchase_activity`, `cancel_booking`, `process_payment`, `authorize_payment`, `approve_action`, etc.) are hard-blocked from cache writes or reads (`TRANSACTIONAL_OPERATIONS`).
+
+9. **Selective Replan Parallelization & Reused Node Tracking (`graph/workflow.py`)**:
+   - Independent affected nodes in dynamic replanning execute in parallel via `ThreadPoolExecutor`.
+   - Reused unaffected nodes are tracked in `cost_tracker.record_savings`, recording calls avoided, tokens saved, cost saved, and latency saved.
+
+10. **Human-in-the-Loop Cost Guard**:
+    - During human approval waiting (`WAITING_FOR_APPROVAL`), graph execution halts completely, generating zero repeated LLM calls.
+    - Idempotency keys prevent duplicate execution attempts on repeated clicks.
+
+11. **Streamlit Cost & Performance Dashboard (`app/pages/agent_trace.py`)**:
+    - Section 9 provides real-time visibility into workflow cost, model breakdown, agent breakdown, cache hit rates, duplicate prevention, and estimated savings.
+
 
 
 
