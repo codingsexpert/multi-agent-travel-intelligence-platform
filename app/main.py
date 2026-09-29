@@ -1,5 +1,13 @@
 """Main entrypoint for the Multi-Agent Travel Intelligence Platform."""
 
+import sys
+from pathlib import Path
+
+# Ensure workspace root is first in sys.path when running via 'streamlit run app/main.py'
+_ROOT_DIR = str(Path(__file__).resolve().parent.parent)
+if _ROOT_DIR not in sys.path:
+    sys.path.insert(0, _ROOT_DIR)
+
 import streamlit as st
 from app.state.session import init_session_state
 from app.components.sidebar import render_sidebar
