@@ -24,17 +24,25 @@ PREFERENCE_OPTIONS = [
     "Nature",
     "Adventure",
     "Shopping",
-    "History",
     "Nightlife",
-    "Photography",
     "Relaxation",
+    "History",
+    "Family",
+    "Other",
 ]
 
-TRAVEL_STYLES = [
-    "Budget",
+TRAVEL_PACES = [
+    "Relaxed",
     "Balanced",
-    "Premium",
-    "Luxury",
+    "Fast / Active",
+]
+
+TRANSPORT_OPTIONS = [
+    "Commercial Flights",
+    "High-Speed Rail / Train",
+    "Rental Car",
+    "Private Driver",
+    "Flexible / Cheapest",
 ]
 
 ACCOMMODATION_OPTIONS = [
@@ -42,8 +50,19 @@ ACCOMMODATION_OPTIONS = [
     "Budget Hotel",
     "3 Star",
     "4 Star",
-    "5 Star",
-    "Other",
+    "5 Star Luxury",
+    "Boutique Heritage",
+    "Vacation Rental",
+]
+
+DIETARY_OPTIONS = [
+    "No Restrictions",
+    "Vegetarian",
+    "Vegan",
+    "Halal",
+    "Kosher",
+    "Gluten-Free",
+    "Jain Vegetarian",
 ]
 
 CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "INR"]
@@ -74,12 +93,12 @@ def render_new_trip_page() -> None:
             end_d = st.date_input("End Date", value=today + timedelta(days=38))
             b_col1, b_col2 = st.columns([2, 1])
             with b_col1:
-                budget = st.number_input("Total Budget Limit", min_value=100.0, value=5000.0, step=100.0)
+                budget = st.number_input("Maximum Budget Limit", min_value=100.0, value=5000.0, step=100.0)
             with b_col2:
                 currency = st.selectbox("Currency", options=CURRENCIES, index=0)
 
         st.markdown("---")
-        st.subheader("2. Travel Preferences & Style")
+        st.subheader("2. Travel Preferences")
 
         p_col1, p_col2 = st.columns(2)
         with p_col1:
@@ -88,19 +107,22 @@ def render_new_trip_page() -> None:
                 options=PREFERENCE_OPTIONS,
                 default=["Food", "Culture", "History"],
             )
-            travel_style = st.selectbox("Travel Pace & Style", options=TRAVEL_STYLES, index=1)
+            travel_pace = st.selectbox("Trip Pace & Intensity", options=TRAVEL_PACES, index=1)
+            preferred_transport = st.selectbox("Preferred Transport Mode", options=TRANSPORT_OPTIONS, index=0)
 
         with p_col2:
-            accommodation = st.selectbox("Accommodation Preference", options=ACCOMMODATION_OPTIONS, index=3)
+            accommodation = st.selectbox("Hotel / Lodging Preference", options=ACCOMMODATION_OPTIONS, index=3)
+            dietary = st.selectbox("Dietary Preference", options=DIETARY_OPTIONS, index=0)
+            accessibility = st.checkbox("Require Wheelchair / Step-Free Accessibility", value=False)
             direct_flights = st.checkbox("Require direct / non-stop flights only", value=False)
-            kid_friendly = st.checkbox("Require kid-friendly venues & pacing", value=False)
+            kid_friendly = st.checkbox("Require kid-friendly venues & family pacing", value=False)
 
         st.markdown("---")
-        st.subheader("3. Additional Requirements & Constraints")
+        st.subheader("3. Constraints & Special Requirements")
         additional_notes = st.text_area(
-            "Free-form notes, must-see landmarks, or dietary restrictions",
+            "Free-form notes, must-see landmarks, or medical/special requirements",
             value="",
-            placeholder="e.g. We love authentic ramen, hate rushing between museums, and need vegetarian dining options.",
+            placeholder="e.g. We love authentic ramen, hate rushing between museums, and need step-free access for luggage.",
             height=100,
         )
 
@@ -109,17 +131,24 @@ def render_new_trip_page() -> None:
     if submitted:
         # Step 1: Validate input using Pydantic models
         try:
-            style_pace_map = {
-                "Budget": "moderate",
+            pace_map = {
+                "Relaxed": "relaxed",
                 "Balanced": "moderate",
-                "Premium": "relaxed",
-                "Luxury": "relaxed",
+                "Fast / Active": "fast",
             }
-            pace = style_pace_map.get(travel_style, "moderate")
+            pace = pace_map.get(travel_pace, "moderate")
+
+            cabin_class = "economy"
+            if "5 Star" in accommodation or "Boutique" in accommodation:
+                cabin_class = "business"
+            elif "4 Star" in accommodation:
+                cabin_class = "premium_economy"
 
             must_include_items = []
             if additional_notes.strip():
                 must_include_items.append(additional_notes.strip()[:100])
+            if dietary != "No Restrictions":
+                must_include_items.append(f"Dietary: {dietary}")
 
             travel_req = TravelRequest(
                 origin=origin,
@@ -133,7 +162,7 @@ def render_new_trip_page() -> None:
                     interests=selected_interests,
                     pace=pace,
                     accommodation_type=accommodation.lower(),
-                    cabin_class="economy" if travel_style in ["Budget", "Balanced"] else "premium_economy",
+                    cabin_class=cabin_class,
                 ),
                 constraints=TripConstraints(
                     direct_flights_only=direct_flights,
@@ -155,7 +184,7 @@ def render_new_trip_page() -> None:
             }
             preferences_payload = {
                 "preferences": travel_req.preferences.interests,
-                "travel_style": travel_style,
+                "travel_style": travel_pace,
                 "accommodation_preference": accommodation,
                 "additional_requirements": additional_notes.strip(),
             }

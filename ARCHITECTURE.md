@@ -64,25 +64,47 @@ graph TD
 
 ---
 
-## 2. Streamlit Architecture
+## 2. Production Travel Command Center UI/UX Architecture
 
-The user interface is structured around a reactive, multi-view paradigm that separates presentation logic from agent orchestration:
+The frontend is an enterprise-grade **Travel Command Center** built with Streamlit and a custom vanilla CSS design system, avoiding chatbot gimmicks and delivering actionable flight, hotel, and intelligence cockpits.
 
-1. **State Isolation (`st.session_state`)**:
-   - `session_id` & `user_id`: Authenticated user session tokens.
-   - `current_trip`: Current active trip entity loaded from Supabase.
-   - `graph_state`: Snapshot of the active LangGraph execution state.
-   - `interrupt_payload`: Holds pending human-approval tokens and approval request payloads.
-   - `chat_history`: Conversation timeline of user intents and agent responses.
-2. **View Decomposition**:
-   - **Trip Conception View**: Conversational natural language input, date pickers, budget sliders, and travel preference chips.
-   - **Agent Execution Monitor**: Live visualization of active agents, step-by-step reasoning logs, tool calls, and latency indicators.
-   - **Interactive Itinerary View**: Day-by-day interactive timeline with flight cards, hotel details, weather forecasts, and route maps.
-   - **Dynamic Disruption & Replanning Sandbox**: Interactive controls allowing users to inject disruptions (e.g. simulated 5-hour flight delay, thunderstorm alert, or hotel cancellation) and observe live delta-replanning.
-   - **Human Approval Modal / Card**: Explicit approval checkpoint with action summary, total financial charge, and cancellation terms.
-3. **Async-to-Sync Bridge**:
-   - LangGraph runs asynchronously; Streamlit operates synchronously per script run.
-   - Background execution is bridged via an async runner with streaming queue consumption, updating UI components dynamically as graph nodes complete.
+### 2.1 Information Architecture & Navigation
+The platform splits navigation into a two-tier taxonomy:
+
+```
+├── 🧭 PRIMARY NAVIGATION (Traveler Cockpit)
+│   ├── 1. 📊 Dashboard                 - Active trip, 9-stage planning matrix, pending approvals, recent replans
+│   ├── 2. ➕ New Trip                  - Multi-step trip creation with 10 preference dimensions & pace constraints
+│   ├── 3. 🧳 My Trips                  - Historical itineraries, status filters, and one-click trip switching
+│   ├── 4. 📍 Current Trip              - Deep inspection of route, schedule, constraints, and quick actions
+│   ├── 5. 🗓️ Itinerary                 - Structured Day/Morning/Afternoon/Evening cards with versioning (v1, v2)
+│   ├── 6. ✈️ Flights                   - Cabin class, duration, stops, pricing, and DEMO/LIVE provenance tags
+│   ├── 7. 🏨 Hotels                    - Star ratings, amenities, nightly rates, and budget impact percentages
+│   ├── 8. 🎭 Activities                - Timing, duration, transit times, weather suitability, deduplicated
+│   ├── 9. ⛅ Weather                   - High/low °C, precipitation probability, humidity, and active advisories
+│   ├── 10. 💰 Budget                   - Deterministic 6-category breakdown, utilization bar, and threshold badges
+│   ├── 11. 🌐 Sources                  - Trust hierarchy (OFFICIAL, NEWS, REFERENCE, COMMUNITY, UNKNOWN)
+│   └── 12. ⏳ Planning Progress        - Real-time pipeline state (Trip Request -> Requirements -> Planner -> ...)
+│
+└── 🛠️ DEVELOPER & ADVANCED (Intelligence & Safety Controls)
+    ├── 13. 🔬 Agent Trace              - Multi-node execution logs, latency profiling, token counts, and cost
+    ├── 14. 🔄 Changes & Replanning     - Event disruption timeline, node reuse tags (RERUN, REUSED, INVALIDATED)
+    ├── 15. 🛡️ Approvals                - Human-in-the-Loop approval cards, risk levels, and expiry countdowns
+    ├── 16. 🧪 Evaluation               - 31-scenario regression benchmark across Quality, Reliability, and Security
+    ├── 17. 🧠 Knowledge / RAG          - Verified domain dossiers, chunk metrics, and live semantic search sandbox
+    ├── 18. 🔒 Security                 - 10-layer defense matrix (Guardrails, RLS, SSRF, Secret Redaction, HITL)
+    └── 19. ⚙️ Settings                 - Safe environment toggles, active model identifiers, zero leaked secrets
+```
+
+### 2.2 Design System & Visual Tokens
+- **Theme**: Premium dark aesthetic (`#0F172A` Slate background, `#1E293B` Card background, `#334155` Borders).
+- **Cards (`.travel-card`)**: Consistent padding, subtle border radius, hover lift micro-interactions.
+- **Badges**:
+  - `badge-demo`: Gold outline denoting deterministic sandboxed mock data.
+  - `badge-live`: Green badge denoting authenticated live third-party API data.
+  - `badge-completed`, `badge-running`, `badge-warning`, `badge-failed`, `badge-approval`.
+- **Authoritative Backend Validation**: UI strictly never computes budgets or authorizes bookings. Backend rules remain authoritative; UI is not a security boundary.
+- **Secret Redaction**: Zero API keys, passwords, or session tokens exposed in any UI component or trace.
 
 ---
 

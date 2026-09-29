@@ -3,10 +3,13 @@
 import streamlit as st
 from app.state.session import init_session_state
 from app.components.sidebar import render_sidebar
+from app.components.styles import inject_custom_styles
 from app.pages import (
     render_dashboard_page,
     render_new_trip_page,
     render_my_trips_page,
+    render_current_trip_page,
+    render_planning_progress_page,
     render_conversation_page,
     render_itinerary_page,
     render_flights_page,
@@ -16,18 +19,21 @@ from app.pages import (
     render_budget_page,
     render_sources_page,
     render_agent_trace_page,
+    render_replanning_page,
     render_settings_page,
     render_approvals_page,
     render_evaluation_page,
+    render_security_page,
+    render_knowledge_page,
 )
 
 
 PAGE_DISPATCHER = {
+    # Primary Navigation
     "Dashboard": render_dashboard_page,
     "New Trip": render_new_trip_page,
     "My Trips": render_my_trips_page,
-    "Approvals": render_approvals_page,
-    "Conversation": render_conversation_page,
+    "Current Trip": render_current_trip_page,
     "Itinerary": render_itinerary_page,
     "Flights": render_flights_page,
     "Hotels": render_hotels_page,
@@ -35,8 +41,15 @@ PAGE_DISPATCHER = {
     "Weather": render_weather_page,
     "Budget": render_budget_page,
     "Sources": render_sources_page,
+    "Planning Progress": render_planning_progress_page,
+    "Conversation": render_conversation_page,
+    # Developer / Advanced Operations
     "Agent Trace": render_agent_trace_page,
+    "Changes & Replanning": render_replanning_page,
+    "Approvals": render_approvals_page,
     "Evaluation": render_evaluation_page,
+    "Knowledge / RAG": render_knowledge_page,
+    "Security": render_security_page,
     "Settings": render_settings_page,
 }
 
@@ -52,6 +65,9 @@ def main():
 
     # Initialize session state keys
     init_session_state()
+
+    # Inject enterprise design system tokens & custom CSS
+    inject_custom_styles()
 
     # Render sidebar navigation
     selected_page = render_sidebar()

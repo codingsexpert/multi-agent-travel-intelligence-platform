@@ -46,6 +46,12 @@ def get_current_user() -> Dict[str, Any]:
     return st.session_state.get("auth_user") or DEMO_USER
 
 
+def get_current_user_id() -> str:
+    """Retrieve active user ID as a string."""
+    user = get_current_user()
+    return str(user.get("id", DEMO_USER["id"]))
+
+
 def set_current_user(user: Optional[Dict[str, Any]]) -> None:
     """Update active user in session state."""
     init_session_state()

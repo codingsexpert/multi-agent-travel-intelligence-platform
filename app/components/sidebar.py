@@ -1,17 +1,23 @@
-"""Sidebar navigation and environment indicator for Travel Command Center."""
+"""Sidebar navigation and environment indicator for Travel Command Center.
 
+Phase 17: Production Travel Command Center UI/UX.
+Implements two-tier Information Architecture:
+- Primary Navigation (Travel Intelligence & Trip Management)
+- Developer / Advanced Operations (Tracing, Replanning, Security, Approvals, RAG)
+"""
+
+from typing import List, Tuple
 import streamlit as st
 from config.settings import get_settings
 from services.health_service import get_health_status
 from app.state.session import get_current_trip
 
 
-PAGES = [
+PRIMARY_PAGES: List[Tuple[str, str]] = [
     ("Dashboard", "📊"),
     ("New Trip", "📝"),
     ("My Trips", "📂"),
-    ("Approvals", "🛡️"),
-    ("Conversation", "💬"),
+    ("Current Trip", "🧭"),
     ("Itinerary", "🗓️"),
     ("Flights", "✈️"),
     ("Hotels", "🏨"),
@@ -19,39 +25,46 @@ PAGES = [
     ("Weather", "⛅"),
     ("Budget", "💰"),
     ("Sources", "📚"),
+    ("Planning Progress", "⏳"),
+]
+
+ADVANCED_PAGES: List[Tuple[str, str]] = [
     ("Agent Trace", "🔍"),
+    ("Changes & Replanning", "🔄"),
+    ("Approvals", "🛡️"),
     ("Evaluation", "🧪"),
+    ("Knowledge / RAG", "🧠"),
+    ("Security", "🔐"),
     ("Settings", "⚙️"),
 ]
 
+ALL_PAGES = PRIMARY_PAGES + ADVANCED_PAGES
+PAGE_ICONS = dict(ALL_PAGES)
+
 
 def render_sidebar() -> str:
-    """Render application sidebar and return the currently selected page name."""
+    """Render structured sidebar navigation and return currently active page name."""
     settings = get_settings()
     health = get_health_status(settings)
 
     with st.sidebar:
-        st.markdown("## ✈️ Travel Command")
-        st.caption("Multi-Agent Intelligence Platform")
+        st.markdown(
+            """
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <span style="font-size: 1.5rem;">✈️</span>
+                <span style="font-size: 1.25rem; font-weight: 700; color: #F8FAFC;">Travel Command</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.caption("Autonomous Multi-Agent Intelligence Platform")
 
-        # Environment Badge
+        # Environment & Mode Badge
         if health.demo_mode:
             st.markdown(
                 """
-                <div style="
-                    background: rgba(76, 175, 80, 0.15);
-                    border: 1px solid rgba(76, 175, 80, 0.4);
-                    color: #81C784;
-                    padding: 6px 12px;
-                    border-radius: 6px;
-                    font-size: 0.8rem;
-                    font-weight: 600;
-                    margin-bottom: 12px;
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                ">
-                    <span>🟢</span> <span>DEMO MODE (Offline)</span>
+                <div class="badge badge-demo" style="margin: 8px 0 16px 0; width: 100%; justify-content: center; padding: 4px 8px;">
+                    <span>🟢</span> <span>DEMO MODE (Offline & Mock Tools)</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -59,68 +72,83 @@ def render_sidebar() -> str:
         else:
             st.markdown(
                 f"""
-                <div style="
-                    background: rgba(33, 150, 243, 0.15);
-                    border: 1px solid rgba(33, 150, 243, 0.4);
-                    color: #64B5F6;
-                    padding: 6px 12px;
-                    border-radius: 6px;
-                    font-size: 0.8rem;
-                    font-weight: 600;
-                    margin-bottom: 12px;
-                ">
-                    🔵 {health.environment}
+                <div class="badge badge-live" style="margin: 8px 0 16px 0; width: 100%; justify-content: center; padding: 4px 8px;">
+                    <span>🔵</span> <span>LIVE ENVIRONMENT ({health.environment})</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-        # Active Trip Indicator
+        # Active Trip Mini-Summary Card
         active_trip = get_current_trip()
         if active_trip:
             st.markdown(
                 f"""
                 <div style="
-                    background: rgba(255, 255, 255, 0.04);
-                    border-left: 3px solid #1E88E5;
-                    padding: 8px 10px;
-                    border-radius: 4px;
+                    background: #1E293B;
+                    border: 1px solid #334155;
+                    border-left: 3px solid #3B82F6;
+                    padding: 10px 12px;
+                    border-radius: 6px;
                     margin-bottom: 16px;
-                    font-size: 0.85rem;
                 ">
-                    <div style="font-weight: 600; color: #E0E0E0;">Active Trip</div>
-                    <div style="color: #90CAF9;">{active_trip.origin} &rarr; {active_trip.destination}</div>
-                    <div style="font-size: 0.75rem; color: #9E9E9E;">{active_trip.duration_days} Days | {active_trip.currency} {active_trip.budget:,.0f}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #94A3B8; font-weight: 600;">ACTIVE TRIP</div>
+                    <div style="font-weight: 600; color: #F8FAFC; font-size: 0.95rem; margin: 2px 0;">{active_trip.origin} &rarr; {active_trip.destination}</div>
+                    <div style="font-size: 0.8rem; color: #CBD5E1;">{active_trip.duration_days} Days &bull; {active_trip.currency} {active_trip.budget:,.0f}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
         st.markdown("---")
-        st.markdown("### Navigation")
 
-        # Page selection
-        page_labels = [name for name, _ in PAGES]
         current_page = st.session_state.get("current_page", "Dashboard")
-        default_index = page_labels.index(current_page) if current_page in page_labels else 0
+        all_labels = [name for name, _ in ALL_PAGES]
+        if current_page not in all_labels:
+            current_page = "Dashboard"
 
-        selected_page = st.radio(
-            "Go to",
-            options=page_labels,
-            index=default_index,
-            format_func=lambda name: f"{dict(PAGES)[name]} {name}",
+        # View Mode Toggle: Travel Intelligence vs Developer / Operations
+        is_advanced_current = any(name == current_page for name, _ in ADVANCED_PAGES)
+        nav_mode = st.radio(
+            "Navigation Scope",
+            options=["Travel Intelligence", "Developer & Ops"],
+            index=1 if is_advanced_current else 0,
+            horizontal=True,
             label_visibility="collapsed",
         )
 
-        st.session_state.current_page = selected_page
+        st.markdown(f"**{'Travel Planner' if nav_mode == 'Travel Intelligence' else 'Platform Operations'}**")
+
+        if nav_mode == "Travel Intelligence":
+            options = [name for name, _ in PRIMARY_PAGES]
+            default_idx = options.index(current_page) if current_page in options else 0
+            selected = st.radio(
+                "Primary Navigation",
+                options=options,
+                index=default_idx,
+                format_func=lambda n: f"{PAGE_ICONS.get(n, '•')} {n}",
+                label_visibility="collapsed",
+            )
+        else:
+            options = [name for name, _ in ADVANCED_PAGES]
+            default_idx = options.index(current_page) if current_page in options else 0
+            selected = st.radio(
+                "Advanced Navigation",
+                options=options,
+                index=default_idx,
+                format_func=lambda n: f"{PAGE_ICONS.get(n, '•')} {n}",
+                label_visibility="collapsed",
+            )
+
+        st.session_state.current_page = selected
 
         st.markdown("---")
+        # System Footer details
         user = st.session_state.get("auth_user", {}) or {}
         user_email = user.get("email", "guest")
-        is_demo = user.get("is_demo", True)
-        user_label = f"👤 {user_email} (Demo)" if is_demo else f"👤 {user_email}"
-        st.caption(user_label)
-        st.caption(f"Workflow: `{st.session_state.get('workflow_status', 'IDLE')}`")
-        st.caption("Phase 3: Supabase & Persistence")
+        st.caption(f"👤 **Operator**: `{user_email}`")
+        wf_status = st.session_state.get("workflow_status", "IDLE")
+        st.caption(f"⚙️ **Workflow**: `{wf_status}`")
+        st.caption("🛡️ **HITL & Guardrails**: Active")
 
-    return selected_page
+    return selected
