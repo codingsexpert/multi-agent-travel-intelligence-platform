@@ -638,6 +638,28 @@ Is Approval Required?
 
 ---
 
+## 📊 Phase 14: LangSmith Observability & Production Tracing
+
+Phase 14 delivers an enterprise-grade distributed tracing and observability layer covering the complete multi-agent lifecycle:
+
+### Observability Features:
+1. **End-to-End Distributed Tracing**:
+   - Trace hierarchy connects the root travel request through LangGraph, specialized reasoning agents, MCP tools, provider adapters, RAG retrieval, Web Search, Dynamic Replanning, and Human Approvals.
+2. **Automated Secret Redaction (`TraceSanitizer`)**:
+   - Recursive sanitization scrubs API keys, bearer tokens, passwords, cookies, authorization headers, and payment identifiers before recording or exporting telemetry.
+3. **Model Token & Cost Accounting**:
+   - Tracks exact input, output, and total token usage per reasoning agent invocation.
+   - Computes estimated model costs for known models (`gpt-4o`, `gpt-4o-mini`, `text-embedding-3-small`) while marking unpriced or custom models as `"UNKNOWN"`, strictly avoiding fabricated metrics.
+4. **Non-Blocking Failure Isolation**:
+   - Observability never degrades or halts travel planning. If LangSmith endpoints are unreachable or credentials are unconfigured, operations continue seamlessly with in-memory telemetry.
+5. **Streamlit Agent Trace & Telemetry Dashboard**:
+   - **Workflow Summary**: Real-time duration, operation counts, token counts, model calls, tool calls, search calls, RAG calls, retries, and estimated costs.
+   - **Agent Trace Checklist**: Status badges for all 11 nodes (`LLM`, `DETERMINISTIC`, `MCP`, `RAG`, `WEB`, `HUMAN`, `MOCK`, `LIVE`).
+   - **Trace Details & Timeline**: Sanitized chronological span table with latency breakdowns and error insights.
+   - **Safe LangSmith Link**: Direct link to the LangSmith cloud run or clear "Tracing unavailable (Offline / Demo Mode)" indicator.
+
+---
+
 ## 🛡️ Security & Privacy Principles
 
 1. **Zero Secret Leaks**: Secrets and service keys are never committed to version control.

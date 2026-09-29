@@ -71,7 +71,14 @@ def run_travel_planning(
         except Exception as e:
             logger.warning(f"[PlanningService] Failed to persist user message: {str(e)}")
 
-    # 3. Create initial LangGraph state
+    # 3. Create initial LangGraph state and workflow telemetry tracker
+    from services.observability_service import observability_service
+    tracker = observability_service.create_workflow_tracker(
+        trip_id=trip_id,
+        user_id=user_id,
+        is_demo=t_repo.is_demo_mode,
+    )
+
     initial_state = create_initial_state(
         original_request=user_request,
         user_id=user_id,
@@ -80,17 +87,55 @@ def run_travel_planning(
         is_demo=t_repo.is_demo_mode,
         existing_trip_data=existing_trip_data,
     )
+    initial_state["workflow_telemetry"] = tracker.to_summary_dict()
 
     # 4. Invoke LangGraph workflow
     try:
         final_state: TravelState = travel_graph.invoke(initial_state)
     except Exception as e:
         logger.error(f"[PlanningService] LangGraph execution error: {str(e)}")
+        tracker.record_error(
+            error_type=type(e).__name__,
+            safe_message=str(e),
+            component="travel_graph",
+        )
         final_state = dict(initial_state)  # type: ignore
         final_state["planning_status"] = WorkflowStatus.FAILED.value
         final_state["errors"] = [f"LangGraph execution failure: {str(e)}"]
 
     duration_ms = round((time.time() - start_time) * 1000, 2)
+
+    # Ingest agent runs and model token usage into tracker
+    for ar in final_state.get("agent_runs", []):
+        agent_name = ar.get("agent_name", "unknown")
+        dur = ar.get("duration_ms", 0.0)
+        stat = ar.get("status", "SUCCESS")
+        meta = ar.get("metadata", {})
+        tracker.add_span(
+            span_id=ar.get("id") or str(time.time()),
+            name=f"Agent: {agent_name}",
+            span_type="agent",
+            duration_ms=dur,
+            status=stat,
+            metadata=meta,
+            error=ar.get("error_message"),
+        )
+        tokens = meta.get("total_tokens")
+        if tokens:
+            tracker.record_model_usage(
+                model_name=meta.get("model", "gpt-4o"),
+                input_tokens=meta.get("input_tokens", int(tokens * 0.7)),
+                output_tokens=meta.get("output_tokens", int(tokens * 0.3)),
+            )
+
+    tracker.finish(
+        status="SUCCESS" if final_state.get("planning_status") != WorkflowStatus.FAILED.value else "FAILED"
+    )
+    telemetry_summary = tracker.to_summary_dict()
+    telemetry_summary["spans"] = tracker.spans
+    telemetry_summary["errors"] = tracker.errors
+    telemetry_summary["retry_events"] = tracker.retry_events
+    final_state["workflow_telemetry"] = telemetry_summary
 
     # 5. Persist agent execution run for observability
     if trip_id:
@@ -103,6 +148,8 @@ def run_travel_planning(
                     "original_request": user_request,
                     "graph_steps": final_state.get("graph_step_count"),
                     "execution_time_ms": duration_ms,
+                    "workflow_run_id": tracker.workflow_run_id,
+                    "total_tokens": tracker.total_tokens,
                 },
             )
             r_repo.update_agent_run(

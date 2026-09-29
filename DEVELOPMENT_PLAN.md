@@ -548,20 +548,42 @@ This development plan breaks down the construction of the platform into **18 dis
 
 ---
 
-## Phase 14: LangSmith Observability & Tracing
-- **Objective**: Integrate end-to-end distributed tracing, token cost attribution, and latency profiling.
-- **Implementation Tasks**:
-  1. Configure LangSmith tracer in `src/core/telemetry.py` with custom project tags and run metadata.
-  2. Instrument custom spans for deterministic engines (budget, validation) alongside LLM spans.
-  3. Implement cost calculator aggregating token expenditure per agent and overall run.
-  4. Create Streamlit observability panel displaying trace URLs and run performance.
+## Phase 14: LangSmith Observability & Production Tracing *(Completed)*
+- **Objective**: Implement production-grade LangSmith distributed tracing, token usage tracking, exact model cost calculation, secret redaction, and performance observability across the entire multi-agent workflow with non-blocking failure isolation.
+- **Completed Implementation**:
+  1. LangSmith Configuration in `config/settings.py`:
+     - Environment variables: `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, `LANGSMITH_ENDPOINT` (with `LANGCHAIN_*` alias compatibility).
+     - Support for both `DEMO_MODE` and `LIVE_MODE`.
+  2. Centralized Observability Layer in `services/observability_service.py`:
+     - `TraceSanitizer`: Recursively scrubs secrets from dictionaries, lists, strings, Bearer tokens, and URL parameters (`api_key`, `token`, `password`, `secret`, `authorization`, `cookie`, `card_number`, `credential`).
+     - `WorkflowTelemetryTracker`: Tracks operations, model calls, input/output tokens, estimated cost, MCP calls, search calls, RAG calls, retries, latency, spans, and errors.
+     - `ObservabilityService`: Non-blocking LangSmith client and RunTree integration with graceful offline fallback.
+  3. End-to-End Workflow Instrumentation:
+     - `services/planning_service.py`: Root workflow tracker creation, agent span ingestion, model token tracking, and telemetry attachment to `TravelState`.
+     - `mcp/client.py`: MCP tool execution tracing (`trace_mcp_tool`) capturing duration, status, retries, and sanitized arguments.
+     - `rag/retriever.py`: RAG knowledge retrieval tracing (`trace_rag_retrieval`) recording query, retrieved chunk count, source IDs, and similarity score.
+     - `mcp/tools/search_tools.py`: Web search tracing (`trace_web_search`) recording search query, provider, and result count.
+     - `services/replanning_service.py`: Dynamic replan tracing (`trace_replanning_event`) logging affected, reused, and rerun nodes.
+     - `services/action_execution_service.py`: HITL execution tracing (`trace_hitl_action`) logging proposals, risk levels, and confirmation codes.
+  4. Streamlit Observability UI in `app/pages/agent_trace.py`:
+     - WORKFLOW SUMMARY: Status, Workflow ID, Trip ID, Duration, Total operations, Model calls, Tool calls, Search calls, RAG calls, Retries, Estimated cost.
+     - AGENT TRACE checklist: Visual status for all 11 nodes with badges (`LLM`, `DETERMINISTIC`, `MCP`, `RAG`, `WEB`, `HUMAN`, `MOCK`, `LIVE`).
+     - TRACE DETAILS & TIMELINE: Detailed span breakdown with sanitized inputs, providers, and error summaries.
+     - LangSmith Run link with safe URL or "Tracing unavailable" in offline mode.
+  5. Built Comprehensive Test Suite in `tests/test_observability.py`:
+     - 21 unit and integration tests covering configuration, tracing enable/disable, parent/child runs, secret sanitization, cost calculations, MCP/RAG/Search/Replanning/HITL tracing, and non-blocking failure isolation.
 - **Files / Components**:
-  - `src/core/telemetry.py`, `src/ui/components/observability_panel.py`
-  - `tests/test_telemetry.py`
+  - `config/settings.py`
+  - `services/observability_service.py`, `services/__init__.py`
+  - `services/planning_service.py`, `graph/state.py`
+  - `mcp/client.py`, `mcp/tools/search_tools.py`, `rag/retriever.py`
+  - `services/replanning_service.py`, `services/action_execution_service.py`
+  - `app/pages/agent_trace.py`
+  - `tests/test_observability.py`
 - **Testing Requirements**:
-  - Verify trace generation and correct hierarchical span structure in LangSmith test runs.
+  - 21 tests in `tests/test_observability.py` passing with 100% success.
 - **Expected Output**:
-  - Production-grade visibility into latency, tokens, cost, and agent decision paths.
+  - Enterprise-grade LangSmith distributed tracing and observability layer with non-blocking failure resilience.
 
 ---
 

@@ -189,6 +189,19 @@ class ActionExecutionService:
                 )
             )
 
+            try:
+                from services.observability_service import observability_service
+                observability_service.trace_hitl_action(
+                    proposal_id=proposal_id,
+                    action_type=proposal.action_type,
+                    risk_level=proposal.risk_level.value,
+                    status="COMPLETED",
+                    duration_ms=duration_ms,
+                    confirmation_code=exec_record.confirmation_code,
+                )
+            except Exception:
+                pass
+
             logger.info("Successfully executed proposal %s (code=%s)", proposal_id, exec_record.confirmation_code)
             return exec_record
 
@@ -198,6 +211,19 @@ class ActionExecutionService:
 
             error_msg = str(exc)
             logger.error("Execution failed for proposal %s: %s", proposal_id, error_msg)
+
+            try:
+                from services.observability_service import observability_service
+                observability_service.trace_hitl_action(
+                    proposal_id=proposal_id,
+                    action_type=proposal.action_type,
+                    risk_level=proposal.risk_level.value,
+                    status="FAILED",
+                    duration_ms=duration_ms,
+                    error=error_msg,
+                )
+            except Exception:
+                pass
 
             exec_record.status = ApprovalStatus.FAILED
             exec_record.error_message = error_msg

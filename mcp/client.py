@@ -351,6 +351,21 @@ class MCPClient:
         if len(cls._recent_calls) > 200:
             cls._recent_calls.pop(0)
 
+        try:
+            from services.observability_service import observability_service
+            observability_service.trace_mcp_tool(
+                tool_name=tool_name,
+                agent_name=agent_name,
+                arguments=safe_args,
+                duration_ms=duration_ms,
+                success=(status == ToolExecutionStatus.SUCCESS),
+                provider=provider or ("demo" if mode == "DEMO" else "live"),
+                retries=retries,
+                error=error,
+            )
+        except Exception as e:
+            logger.debug(f"[MCPClient] Non-blocking observability trace skipped: {e}")
+
     @classmethod
     def get_recent_calls(cls) -> List[MCPToolCall]:
         """Retrieve recent tool call execution history for UI telemetry."""

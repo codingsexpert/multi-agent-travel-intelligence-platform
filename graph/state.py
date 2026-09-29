@@ -106,6 +106,9 @@ class TravelState(TypedDict, total=False):
     hitl_paused: bool
     hitl_pause_reason: Optional[str]
 
+    # --- Observability & LangSmith Telemetry (Phase 14) ---
+    workflow_telemetry: Optional[Dict[str, Any]]
+
 
 def create_initial_state(
     original_request: str,
@@ -184,5 +187,6 @@ def create_initial_state(
         execution_history=[],
         hitl_paused=False,
         hitl_pause_reason=None,
+        workflow_telemetry=None,
     )
 

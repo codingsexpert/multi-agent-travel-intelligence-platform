@@ -13,7 +13,9 @@ from mcp.providers.search_provider import search_provider
 
 def mcp_web_search(params: WebSearchInput) -> WebSearchOutput:
     """Execute external search returning snippets sanitized and tagged as untrusted third-party data."""
-    return search_provider.web_search(
+    import time
+    start = time.time()
+    res = search_provider.web_search(
         query=params.query,
         destination=params.destination,
         recency=params.recency,
@@ -21,6 +23,20 @@ def mcp_web_search(params: WebSearchInput) -> WebSearchOutput:
         max_results=params.max_results,
         allowed_domains=params.allowed_domains,
     )
+    dur = round((time.time() - start) * 1000, 2)
+    try:
+        from services.observability_service import observability_service
+        observability_service.trace_web_search(
+            query=params.query,
+            provider=res.provider or "Search Provider",
+            result_count=len(res.results),
+            duration_ms=dur,
+            recency=params.recency,
+            domains=params.allowed_domains,
+        )
+    except Exception:
+        pass
+    return res
 
 
 def mcp_fetch_page(params: FetchPageInput) -> FetchPageOutput:

@@ -1006,13 +1006,59 @@ sequenceDiagram
 
 ---
 
-## 13. LangSmith Observability & Evaluation
+## 13. LangSmith Observability & Production Tracing
 
-Every user interaction and agent step is monitored:
-- **Distributed Run Trees**: Hierarchical spans illustrate the exact flow from User Prompt -> Planner -> Parallel Sub-agents -> Budget Validation -> Synthesis.
-- **Token & Cost Attribution**: Real-time token consumption breakdown per agent node, distinguishing between fast models (GPT-4o-mini) and reasoning models (GPT-4o).
-- **Latency Profiling**: Identifies bottlenecks across external APIs, vector queries, and LLM completions.
-- **Automated Regression Evaluation**: LangSmith dataset evaluators measure itinerary quality, constraint adherence, and hallucination rates across test suites.
+The platform implements an enterprise-grade, non-blocking observability layer powered by LangSmith and structured in-memory telemetry (`services/observability_service.py`).
+
+### 13.1 Trace Hierarchy
+```
+Travel Request (workflow_run_id, trip_id, user_id)
+ └── LangGraph Workflow
+      ├── Input Guardrail
+      ├── Planner Agent
+      ├── Flight Agent
+      │    └── Flight MCP
+      │         └── Amadeus / Mock Provider
+      ├── Hotel Agent
+      │    └── Hotel MCP
+      │         └── Amadeus Hospitality / Mock Provider
+      ├── Activity Agent
+      │    └── Maps MCP
+      │         └── Photon / OSRM / Mock Provider
+      ├── Weather Agent
+      │    └── Weather MCP
+      │         └── Open-Meteo / Mock Provider
+      ├── Research Agent
+      │    ├── Web Search MCP (Tavily / Wikipedia / Mock)
+      │    └── RAG Knowledge Retrieval (Supabase pgvector / Mock)
+      ├── Budget Engine (DETERMINISTIC)
+      ├── Validator Engine (DETERMINISTIC)
+      ├── Dynamic Replanning (Impact Analysis -> Selective Execution)
+      ├── Human Approval Gate (ApprovalRequest -> Execution)
+      └── Final Itinerary Version
+```
+
+### 13.2 Automated Secret Scrubbing (`TraceSanitizer`)
+Centralized recursive sanitizer strips all credentials before recording spans:
+- Scrubbed keys: `api_key`, `token`, `password`, `secret`, `authorization`, `cookie`, `card_number`, `cvv`, `credential`, `private_key`.
+- Scrubbed formats: `Bearer <token>` headers and URL query parameters containing authentication keys (`?api_key=...`).
+- Applies to all nested dictionaries, lists, and string payloads.
+
+### 13.3 Real-Time Model Token & Cost Accounting
+- Tracks exact input, output, and total token usage per reasoning agent invocation.
+- Deterministic pricing attribution for known models (`gpt-4o`, `gpt-4o-mini`, `text-embedding-3-small`).
+- If custom or unpriced models are used in LIVE mode, cost is explicitly marked `"UNKNOWN"` rather than fabricating estimates.
+
+### 13.4 Non-Blocking Failure Isolation
+- Observability is strictly non-blocking. If LangSmith endpoints are unreachable, API keys are invalid, or network errors occur, all exceptions are safely caught and suppressed.
+- The core travel planning platform continues uninterrupted with local structured audit logs.
+
+### 13.5 Streamlit Agent Trace Visualization
+The **Agent Trace & Telemetry** page (`app/pages/agent_trace.py`) provides:
+- **Workflow Summary**: Status, Workflow ID, Trip ID, Duration, Total operations, Model calls, Tool calls, Search calls, RAG calls, Retries, and Estimated Cost.
+- **Agent Trace Checklist**: Real-time status for all 11 nodes with categorical labels (`LLM`, `DETERMINISTIC`, `MCP`, `RAG`, `WEB`, `HUMAN`, `MOCK`, `LIVE`).
+- **Trace Details & Timeline**: Sanitized, chronological execution spans.
+- **LangSmith Run Link**: Direct link to the LangSmith cloud run or safe "Tracing unavailable (Offline / Demo Mode)" indicator.
 
 ---
 

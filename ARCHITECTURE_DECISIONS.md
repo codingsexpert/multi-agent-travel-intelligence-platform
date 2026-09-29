@@ -17,6 +17,7 @@ This document records the foundational architectural decisions made for the **Mu
 10. [ADR-10: Strict Boundaries — When NOT to Use an Agent](#adr-10-strict-boundaries--when-not-to-use-an-agent)
 11. [ADR-19: Dynamic Replanning Engine & Selective Execution](#adr-19-dynamic-replanning-engine-deterministic-dependency-mapping-and-selective-execution)
 12. [ADR-20: Human-in-the-Loop (HITL) Approval Workflow & Transactional Governance](#adr-20-human-in-the-loop-hitl-approval-workflow--transactional-governance)
+13. [ADR-21: Production LangSmith Observability, Secret Redaction, & Failure Isolation](#adr-21-production-langsmith-observability-secret-redaction--failure-isolation)
 
 ---
 
@@ -530,6 +531,47 @@ In Phase 13, the platform requires an enterprise-grade safety boundary enforcing
 8. **Row Level Security (RLS) & Audit Logging**:
    - Supabase migration `20260928000005_hitl_approvals.sql` provisions tables with `auth.uid() = user_id` tenant isolation.
    - All events (`PROPOSAL_CREATED`, `APPROVAL_REQUESTED`, `APPROVED`, `REJECTED`, `EXPIRED`, `EXECUTION_STARTED`, `EXECUTION_COMPLETED`, `EXECUTION_FAILED`, `EXECUTION_CANCELLED`) are logged without secrets or credentials.
+
+---
+
+## ADR-21: Production LangSmith Observability, Secret Redaction, & Failure Isolation
+
+### Context
+Operating a production multi-agent system comprising LangGraph state transitions, specialized reasoning agents, MCP tool invocations, real-world API providers, vector RAG lookups, and dynamic replanning requires granular, distributed observability. Without structured tracing:
+- Debugging cascading agent decisions or validator rejections is nearly impossible.
+- Latency bottlenecks and slow external provider APIs cannot be systematically identified.
+- Token consumption and model costs remain untracked.
+- Sensitive credentials, API keys, passwords, and private user details risk leaking into external tracing platforms.
+- Crucially, if an external tracing endpoint experiences a network timeout or authentication outage, the core travel planning application must NEVER crash or freeze.
+
+### Decision
+1. **Centralized Observability Service (`services/observability_service.py`)**:
+   - Implemented `ObservabilityService` providing non-blocking distributed tracing across all agents, tools, RAG, Web Search, Dynamic Replanning, and HITL approvals.
+   - Built `WorkflowTelemetryTracker` capturing workflow run IDs, parent/child spans, token usage, durations, retries, and errors.
+2. **Strict Non-Blocking Failure Isolation**:
+   - Observability is strictly non-blocking. If LangSmith API keys are missing, network connectivity is lost, or API requests return errors (e.g. 401/403/500/timeout), all exceptions are safely caught and logged.
+   - The primary travel planning application continues uninterrupted in full functionality with in-memory telemetry fallback.
+3. **Automated Recursive Secret & PII Scrubbing (`TraceSanitizer`)**:
+   - Centralized sanitizer scans every dictionary, list, string, and URL parameter before recording or transmitting telemetry.
+   - Redacts any sensitive field matching `api_key`, `token`, `password`, `secret`, `authorization`, `cookie`, `payment`, `card_number`, `cvv`, `credential`, etc.
+   - Redacts `Bearer <token>` headers and URL query parameters containing keys.
+4. **Authentic Model Cost & Token Accounting**:
+   - Tracks exact input and output token consumption for reasoning LLMs.
+   - Calculates estimated costs using official published pricing for known models (`gpt-4o`, `gpt-4o-mini`, `text-embedding-3-small`).
+   - If an unknown or custom model is used, the cost is explicitly reported as `"UNKNOWN"`, strictly adhering to the architectural rule to **never fabricate token or cost metrics**.
+5. **Hierarchical Span Architecture**:
+   - Trace hierarchy mirrors the real execution graph:
+     - Root: `Travel Request` (workflow_run_id, trip_id, user_id)
+     - Level 1: `Input Guardrail`, `Planner Agent`, `Specialized Agents`, `Budget Engine`, `Validator`, `Dynamic Replanning`, `Approval Gate`
+     - Level 2: `MCP Tools` (`search_flights`, `search_hotels`, `search_activities`, `get_weather`, `search_web`, `search_news`), `RAG Knowledge Retrieval`
+     - Level 3: External provider adapters (`Amadeus`, `Open-Meteo`, `Wikipedia`, `Tavily`, `Frankfurter`)
+6. **Unified Developer Visibility in Streamlit**:
+   - Refactored `app/pages/agent_trace.py` to display:
+     - WORKFLOW SUMMARY: real-time duration, operation counts, token counts, model calls, tool calls, search calls, RAG calls, and estimated costs.
+     - AGENT TRACE: visual checklist for all 11 nodes with categorical labels (`LLM`, `DETERMINISTIC`, `MCP`, `RAG`, `WEB`, `HUMAN`, `MOCK`, `LIVE`).
+     - TRACE DETAILS & TIMELINE: sanitized, chronological breakdown of spans.
+     - LangSmith run link or safe "Tracing unavailable (Offline / Demo Mode)" indicator.
+
 
 
 

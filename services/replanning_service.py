@@ -197,6 +197,21 @@ class ReplanningService:
         except Exception as e:
             logger.error(f"[ReplanningService] Failed to record audit log: {str(e)}")
 
+        # 7. LangSmith & Observability Tracing
+        try:
+            from services.observability_service import observability_service
+            observability_service.trace_replanning_event(
+                event_type=parsed_events[0].event_type.value if parsed_events else "BATCH_EVENTS",
+                reason=new_version.change_reason or "Dynamic Replan",
+                affected_nodes=impact.affected_components,
+                reused_nodes=impact.reusable_nodes,
+                rerun_nodes=impact.rerun_nodes,
+                duration_ms=0.0,
+                status="SUCCESS" if new_version.is_valid else "FAILED",
+            )
+        except Exception as e:
+            logger.debug(f"[ReplanningService] Observability trace skipped: {e}")
+
         return updated_state, new_version, impact
 
     def handle_user_replan_request(

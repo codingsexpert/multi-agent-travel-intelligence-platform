@@ -5,6 +5,12 @@ from services.health_service import get_health_status, SystemHealthReport, Syste
 from services.replanning_service import ReplanningService, replanning_service
 from services.approval_service import ApprovalService, approval_service
 from services.action_execution_service import ActionExecutionService, action_execution_service
+from services.observability_service import (
+    ObservabilityService,
+    observability_service,
+    TraceSanitizer,
+    WorkflowTelemetryTracker,
+)
 
 __all__ = [
     "SupabaseService",
@@ -18,4 +24,8 @@ __all__ = [
     "approval_service",
     "ActionExecutionService",
     "action_execution_service",
+    "ObservabilityService",
+    "observability_service",
+    "TraceSanitizer",
+    "WorkflowTelemetryTracker",
 ]

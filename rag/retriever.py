@@ -116,17 +116,41 @@ class TravelKnowledgeRetriever:
             )
 
         # 1. Attempt live Supabase pgvector retrieval if live mode is enabled
+        result = None
         if not self.is_demo:
             try:
                 result = self._retrieve_live_supabase(query)
-                result.latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
-                return result
             except Exception as e:
                 logger.warning(f"Live pgvector retrieval failed ({e}); falling back to in-memory store.")
 
         # 2. In-memory / Mock retrieval (DEMO_MODE or fallback)
-        result = self._retrieve_in_memory(query)
+        if result is None:
+            result = self._retrieve_in_memory(query)
+
         result.latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+
+        try:
+            from services.observability_service import observability_service
+            chunks_list = result.results
+            top_score = max([c.similarity_score for c in chunks_list], default=0.0) if chunks_list else 0.0
+            observability_service.trace_rag_retrieval(
+                query=query.query,
+                destination=query.destination,
+                retrieved_count=len(chunks_list),
+                source_ids=[c.chunk_id for c in chunks_list],
+                top_score=top_score,
+                duration_ms=result.latency_ms,
+                similarity_threshold=query.min_similarity,
+                metadata_filters={
+                    "destination": query.destination,
+                    "category": query.category,
+                    "country": query.country,
+                },
+                mode=result.mode,
+            )
+        except Exception as e:
+            logger.debug(f"[TravelKnowledgeRetriever] Non-blocking observability trace skipped: {e}")
+
         return result
 
     def _retrieve_in_memory(self, query: RAGRetrievalQuery) -> RAGRetrievalResult:

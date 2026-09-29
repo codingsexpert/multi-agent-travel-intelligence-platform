@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 from typing import Optional
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,17 +38,22 @@ class Settings(BaseSettings):
     langsmith_api_key: Optional[SecretStr] = Field(
         default=None,
         description="LangSmith API Key",
-        validation_alias="langsmith_api_key",
+        validation_alias=AliasChoices("langsmith_api_key", "langchain_api_key"),
     )
     langsmith_tracing: bool = Field(
         default=False,
         description="Enable LangSmith distributed tracing",
-        validation_alias="langsmith_tracing",
+        validation_alias=AliasChoices("langsmith_tracing", "langchain_tracing_v2"),
     )
     langsmith_project: str = Field(
         default="travel-intelligence-platform",
         description="LangSmith project name",
-        validation_alias="langsmith_project",
+        validation_alias=AliasChoices("langsmith_project", "langchain_project"),
+    )
+    langsmith_endpoint: str = Field(
+        default="https://api.smith.langchain.com",
+        description="LangSmith API Endpoint",
+        validation_alias=AliasChoices("langsmith_endpoint", "langchain_endpoint"),
     )
 
     # External Provider Configuration (Phase 8 - Optional when DEMO_MODE=true)
