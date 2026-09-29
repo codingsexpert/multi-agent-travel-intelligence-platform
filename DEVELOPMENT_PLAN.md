@@ -628,22 +628,42 @@ This development plan breaks down the construction of the platform into **18 dis
 
 ---
 
-## Phase 16: Comprehensive Testing & Evaluation
-- **Objective**: Construct exhaustive test suites, automated evaluation datasets, and CI benchmarks.
+## Phase 16: Comprehensive Testing & Evaluation (COMPLETED)
+- **Objective**: Construct exhaustive test suites, automated evaluation datasets, deterministic quality evaluators, Critical Failure Policy, and Streamlit evaluation dashboard.
 - **Implementation Tasks**:
-  1. Build comprehensive pytest suite covering unit, integration, and graph workflow tests.
-  2. Create standard evaluation dataset `tests/eval_dataset.json` with 25 complex travel scenarios.
-  3. Implement evaluation runner measuring:
-     - Budget adherence rate (target: 100%)
-     - Temporal conflict rate (target: 0%)
-     - Hallucination / groundedness rate (target: < 2%)
+  1. Built three-layer test suite: Unit tests, Integration tests, and End-to-End scenario tests (`tests/test_evaluation_framework.py`).
+  2. Created 31 versioned synthetic evaluation scenarios across 4 structured datasets:
+     - `evaluation/datasets/travel_scenarios.json`: 12 normal travel scenarios (solo, couple, family, group, low/mid/high budget, short, 7-day, multi-city, accessibility).
+     - `evaluation/datasets/adversarial_scenarios.json`: 7 jailbreak, prompt override, secret exfiltration, SSRF, and indirect RAG/web injection scenarios.
+     - `evaluation/datasets/replanning_scenarios.json`: 6 disruption recovery scenarios (flight cancellation, hotel unavailable, severe weather, closed activity, budget cut, date shift).
+     - `evaluation/datasets/security_scenarios.json`: 6 security and HITL scenarios (cross-user trip access, unauthorized booking, expired token replay, duplicate execution race, cloud metadata SSRF, tenant cache separation).
+  3. Implemented deterministic evaluators in `evaluation/evaluators.py`:
+     - `BudgetEvaluator`: Pure arithmetic, zero subjective LLM overrides.
+     - `ConstraintEvaluator`: Multi-dimensional matching of flight stops, travel time, airlines, hotel stars, dietary needs, accessibility, and landmarks.
+     - `ItineraryEvaluator`: Temporal consistency, positive durations, flight-hotel sequencing, zero duplicate activities.
+     - `ToolCorrectnessEvaluator`: Domain tool matching, argument validity, unauthorized tool blocking.
+     - `HallucinationEvaluator`: Honest acknowledgment of unknown/unavailable information.
+     - `PromptInjectionEvaluator`: Direct prompt override blocking and untrusted content defensive boundaries.
+     - `SecurityEvaluator`: Cross-user isolation, secret credential redacting, SSRF defense.
+     - `FailureRecoveryEvaluator`: Provider/MCP resilience without state corruption.
+     - `DynamicReplanningEvaluator`: Selective node reuse and state consistency.
+     - `HITLEvaluator` & Idempotency: Approval enforcement and 0.0% duplicate execution rate.
+     - `CostAndLatencyEvaluator`: Exact deterministic P50, P95, and P99 latency percentiles.
+  4. Implemented qualitative LLM-as-a-judge (`evaluation/llm_judge.py`) strictly confined to subjective dimensions (usefulness, explanation clarity).
+  5. Enforced Zero-Tolerance Critical Failure Policy in `evaluation/runner.py`.
+  6. Built Streamlit Evaluation Dashboard in `app/pages/evaluation.py` with tabs for Quality, Reliability, Security, Latency/Cost, and Scenario Drilldown.
+  7. Added offline-first LangSmith dataset sync in `evaluation/langsmith_datasets.py`.
 - **Files / Components**:
-  - `tests/eval_runner.py`, `tests/eval_dataset.json`
-  - Full suite in `tests/`
+  - `evaluation/datasets/` (`travel_scenarios.json`, `adversarial_scenarios.json`, `replanning_scenarios.json`, `security_scenarios.json`)
+  - `models/evaluation.py`, `models/__init__.py`
+  - `evaluation/evaluators.py`, `evaluation/llm_judge.py`, `evaluation/runner.py`, `evaluation/langsmith_datasets.py`, `evaluation/__init__.py`
+  - `app/pages/evaluation.py`, `app/pages/__init__.py`, `app/components/sidebar.py`, `app/main.py`
+  - `tests/test_evaluation_framework.py`
 - **Testing Requirements**:
-  - Run `pytest --cov=src` achieving > 85% coverage on core engines and state machines.
+  - 21/21 evaluation framework tests passing in `tests/test_evaluation_framework.py`.
+  - All 31 evaluation scenarios passing with zero critical failures in `evaluation.runner`.
 - **Expected Output**:
-  - Automated evaluation harness proving system reliability and interview readiness.
+  - Fully automated, reproducible evaluation harness proving system safety, efficiency, and reliability.
 
 ---
 

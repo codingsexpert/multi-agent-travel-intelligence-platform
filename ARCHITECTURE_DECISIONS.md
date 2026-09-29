@@ -18,6 +18,8 @@ This document records the foundational architectural decisions made for the **Mu
 11. [ADR-19: Dynamic Replanning Engine & Selective Execution](#adr-19-dynamic-replanning-engine-deterministic-dependency-mapping-and-selective-execution)
 12. [ADR-20: Human-in-the-Loop (HITL) Approval Workflow & Transactional Governance](#adr-20-human-in-the-loop-hitl-approval-workflow--transactional-governance)
 13. [ADR-21: Production LangSmith Observability, Secret Redaction, & Failure Isolation](#adr-21-production-langsmith-observability-secret-redaction--failure-isolation)
+14. [ADR-22: Cost Optimization, Deterministic Model Routing & Intelligent Caching](#adr-22-cost-optimization-deterministic-model-routing--intelligent-caching)
+15. [ADR-23: Comprehensive Testing & Evaluation Framework](#adr-23-comprehensive-testing--evaluation-framework)
 
 ---
 
@@ -635,6 +637,64 @@ In multi-agent architectures, operational cost and latency are dominated by repe
 
 11. **Streamlit Cost & Performance Dashboard (`app/pages/agent_trace.py`)**:
     - Section 9 provides real-time visibility into workflow cost, model breakdown, agent breakdown, cache hit rates, duplicate prevention, and estimated savings.
+
+---
+
+## ADR-23: Comprehensive Testing & Evaluation Framework
+
+### Context
+Evaluating a multi-agent travel intelligence system requires more than conventional software test assertions (e.g., status codes or exceptions). The platform incorporates non-deterministic LLMs, external MCP tool integrations, vector retrieval, dynamic graph replanning, and financial/transactional governance. Relying solely on standard unit tests leaves critical behavioral failure modes undetected (e.g., budget mathematical hallucination, date ordering paradoxes, unauthorized transactional tool invocation, prompt injection through untrusted web content, and non-idempotent re-executions). Conversely, relying purely on LLM-as-a-judge for quantitative constraints risks subjective, non-deterministic evaluations of exact numerical criteria.
+
+### Decision
+We implement a hybrid, multi-layered testing and evaluation framework that strictly separates standard deterministic software tests from AI quality evaluations, and enforces a zero-tolerance Critical Failure Policy:
+
+1. **Three-Layer Test Architecture**:
+   - **Unit Tests**: Individual functions, pure math, Pydantic schemas, and guardrail regexes in complete isolation (`pytest tests/`).
+   - **Integration Tests**: Agents, MCP tool gateways, providers, and database services tested with mock adapters.
+   - **End-to-End / Scenario Tests**: Full travel workflows, graph orchestration, and human-in-the-loop cycles executed end-to-end.
+
+2. **Dedicated Evaluation Layer (`evaluation/`)**:
+   - Separate from standard tests, capable of running offline or integrated with LangSmith.
+   - Houses 31 versioned synthetic evaluation scenarios across 4 datasets:
+     - `travel_scenarios.json`: 12 rich normal travel scenarios (solo domestic, couple intl, family with kids, group, low/mid/high budget, short, 7-day, multi-city, accessibility).
+     - `adversarial_scenarios.json`: 7 jailbreak, instruction override, secret exfiltration, and indirect RAG/web prompt injection scenarios.
+     - `replanning_scenarios.json`: 6 disruption recovery scenarios (flight cancellations, hotel unavailability, severe weather, closed attractions, budget cuts, date shifts).
+     - `security_scenarios.json`: 6 access control, RLS isolation, unauthorized transactional execution, expired token replay, duplicate execution, and SSRF scenarios.
+
+3. **Deterministic vs. LLM Evaluators**:
+   - **Strictly Deterministic**:
+     - `BUDGET_ADHERENCE`: Exact Python arithmetic (`estimated_cost <= budget_limit`). Zero LLM subjective judgment permitted.
+     - `CONSTRAINT_SATISFACTION_RATE`: Multi-dimensional matching of flight stops, travel time, airlines, hotel stars, dietary needs, accessibility, and landmark coverage.
+     - `ITINERARY_VALIDITY_RATE`: Temporal ordering (`day_1 <= day_2`), positive activity duration, flight arrival before hotel check-in, and zero duplicate activities.
+     - `TOOL_SELECTION_ACCURACY`: Verification of expected MCP tool routing, valid arguments, and zero unauthorized system tool calls.
+     - `HALLUCINATION_RATE`: Verifies honest acknowledgment of unavailable/unverified data instead of confident guessing.
+     - `PROMPT_INJECTION_BLOCK_RATE`: Guardrail blocking of direct overrides and defensive boundary encapsulation of untrusted external content.
+     - `SECURITY_TEST_PASS_RATE`: Verifies RLS tenant isolation, secret redaction, and SSRF private subnet protection.
+     - `FAILURE_RECOVERY_RATE`: Verifies graceful degradation upon provider timeouts or malformed payloads without state corruption.
+     - `REPLAN_SUCCESS_RATE` & `REPLAN_SELECTIVITY`: Evaluates selective execution (affected nodes re-run, unaffected nodes reused).
+     - `APPROVAL_ENFORCEMENT_RATE` & `DUPLICATE_EXECUTION_RATE`: Verifies transactional actions require approval and duplicate executions equal exactly 0.0%.
+     - `Cost & Latency Percentiles`: Computes deterministic P50, P95, and P99 latency percentiles.
+   - **Qualitative LLM-as-a-Judge (`evaluation/llm_judge.py`)**:
+     - Used ONLY for subjective dimensions: itinerary usefulness, narrative coherence, and explanation clarity.
+     - Strictly prohibited from evaluating arithmetic, dates, security, approvals, or permissions.
+
+4. **Zero-Tolerance Critical Failure Policy**:
+   - Critical failures (unauthorized booking, payment without approval, secret leakage, cross-user data exposure, arbitrary code execution, approval bypass, duplicate transactional execution, SSRF exploit) immediately force the entire evaluation run to `FAILED`, regardless of aggregate percentage scores.
+
+5. **Streamlit Evaluation Dashboard (`app/pages/evaluation.py`)**:
+   - Interactive UI providing real-time evaluation runs, metrics overview cards, quality gauges, reliability/security metrics, latency percentiles, and scenario drilldowns comparing Expected vs. Actual outcomes with failure reasons and trace IDs.
+
+6. **LangSmith Dataset Synchronization (`evaluation/langsmith_datasets.py`)**:
+   - Optional sync to LangSmith datasets when configured, while operating seamlessly in local offline mode without external dependencies.
+
+### Rationale
+- Mathematical constraints (such as flight cost additions and budget caps) must be evaluated with exact arithmetic; LLMs are notoriously prone to floating-point hallucination and rounded approximations.
+- Decoupling tests (`pytest`) from evaluations (`evaluation.runner`) allows rapid CI/CD runs while preserving deep AI quality evaluation as a standalone benchmarking suite.
+- Explicit synthetic scenarios eliminate reliance on sensitive personal data while guaranteeing reproducible regression benchmarks.
+
+### Alternatives Considered
+- *LLM-Only Evaluation (e.g. DeepEval / Ragas monolithic judge)*: Rejected because LLMs cannot be trusted to reliably verify exact budget math, RLS tenant isolation, or cryptographic approval token expiry.
+- *Only Pytest*: Rejected because standard unit assertions do not measure multi-agent quality dimensions, hallucination rates, or replanning selectivity across continuous distributions.
 
 
 

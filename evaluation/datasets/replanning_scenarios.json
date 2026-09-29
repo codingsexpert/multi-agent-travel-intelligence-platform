@@ -1,0 +1,130 @@
+{
+  "version": "1.0.0",
+  "category": "dynamic_replanning",
+  "scenarios": [
+    {
+      "id": "REP-01-FLIGHT-CANCELLATION",
+      "title": "Outbound Flight Disruption & Alternative Booking",
+      "event_type": "flight_cancellation",
+      "severity": "critical",
+      "trigger_event": {
+        "flight_number": "AI-804",
+        "origin": "BOM",
+        "destination": "DEL",
+        "scheduled_time": "2026-10-10T08:00:00Z",
+        "status": "CANCELLED",
+        "reason": "Air traffic control technical outage"
+      },
+      "expected_affected_nodes": ["flights", "itinerary_validator", "budget_engine"],
+      "expected_reused_nodes": ["hotels", "weather", "destination_research"],
+      "expected_outcome": "replan_successful",
+      "verification_criteria": [
+        "Alternative flight is selected",
+        "Hotel stay is retained or updated if check-in delayed",
+        "Budget is recomputed with new flight cost",
+        "Itinerary version incremented"
+      ]
+    },
+    {
+      "id": "REP-02-HOTEL-UNAVAILABLE",
+      "title": "Selected Accommodation Overbooked / Unavailable",
+      "event_type": "hotel_unavailable",
+      "severity": "high",
+      "trigger_event": {
+        "hotel_id": "HTL-DEL-402",
+        "hotel_name": "Imperial Palace Delhi",
+        "status": "UNAVAILABLE",
+        "reason": "Sudden plumbing failure and overbooking"
+      },
+      "expected_affected_nodes": ["hotels", "itinerary_validator", "budget_engine"],
+      "expected_reused_nodes": ["flights", "weather", "activities"],
+      "expected_outcome": "replan_successful",
+      "verification_criteria": [
+        "New hotel found matching star rating and amenities",
+        "Flight bookings remain unaffected",
+        "Budget reflects new hotel pricing"
+      ]
+    },
+    {
+      "id": "REP-03-SEVERE-WEATHER",
+      "title": "Severe Cyclone / Monsoon Warning at Beach Destination",
+      "event_type": "weather_disruption",
+      "severity": "critical",
+      "trigger_event": {
+        "location": "Goa",
+        "alert_type": "RED_ALERT_CYCLONE",
+        "impact_dates": ["2026-11-21", "2026-11-22"],
+        "reason": "Severe gale winds and torrential rain expected on coastal belt"
+      },
+      "expected_affected_nodes": ["weather", "activities", "itinerary_validator"],
+      "expected_reused_nodes": ["flights"],
+      "expected_outcome": "replan_successful",
+      "verification_criteria": [
+        "Outdoor activities (scuba, boat cruise) replaced with indoor cultural options",
+        "Safety warning logged in itinerary notes",
+        "No temporal conflicts created"
+      ]
+    },
+    {
+      "id": "REP-04-ACTIVITY-CLOSED",
+      "title": "Major Museum / Landmark Weekly Closure",
+      "event_type": "activity_cancellation",
+      "severity": "medium",
+      "trigger_event": {
+        "activity_name": "Louvre Museum",
+        "scheduled_date": "2026-11-10",
+        "status": "CLOSED",
+        "reason": "Louvre is closed on Tuesdays and private state event scheduled"
+      },
+      "expected_affected_nodes": ["activities", "itinerary_validator"],
+      "expected_reused_nodes": ["flights", "hotels", "weather"],
+      "expected_outcome": "replan_successful",
+      "verification_criteria": [
+        "Louvre rescheduled to open day or replaced with Musee d'Orsay",
+        "Flights and hotel unchanged",
+        "No duplicate activities on other days"
+      ]
+    },
+    {
+      "id": "REP-05-BUDGET-REDUCTION",
+      "title": "User Slashes Trip Budget by 35%",
+      "event_type": "budget_change",
+      "severity": "high",
+      "trigger_event": {
+        "original_budget": 100000.0,
+        "new_budget": 65000.0,
+        "currency": "INR",
+        "reason": "User requested stricter cost-cutting"
+      },
+      "expected_affected_nodes": ["hotels", "activities", "budget_engine", "itinerary_validator"],
+      "expected_reused_nodes": ["weather", "destination_research"],
+      "expected_outcome": "replan_successful",
+      "verification_criteria": [
+        "Hotel downgraded from 4-star to budget 3-star",
+        "Total estimated cost stays strictly <= 65000.0",
+        "Budget adherence passes"
+      ]
+    },
+    {
+      "id": "REP-06-DATE-SHIFT",
+      "title": "Trip Postponed by 48 Hours Due to Personal Emergency",
+      "event_type": "date_change",
+      "severity": "high",
+      "trigger_event": {
+        "original_start": "2026-10-10",
+        "original_end": "2026-10-12",
+        "new_start": "2026-10-12",
+        "new_end": "2026-10-14",
+        "reason": "Traveller delayed by office commitment"
+      },
+      "expected_affected_nodes": ["flights", "hotels", "weather", "activities", "itinerary_validator"],
+      "expected_reused_nodes": ["destination_research"],
+      "expected_outcome": "replan_successful",
+      "verification_criteria": [
+        "All flight dates shifted +2 days",
+        "Hotel check-in/out shifted +2 days",
+        "Daily itinerary dates match new date window"
+      ]
+    }
+  ]
+}

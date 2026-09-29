@@ -1,0 +1,334 @@
+{
+  "version": "1.0.0",
+  "category": "normal_travel",
+  "scenarios": [
+    {
+      "id": "TS-01-SOLO-DOMESTIC",
+      "title": "Solo Domestic Weekend Exploration",
+      "origin": "Mumbai",
+      "destination": "Delhi",
+      "start_date": "2026-10-10",
+      "end_date": "2026-10-12",
+      "travellers": {"adults": 1, "children": 0},
+      "budget": 20000.0,
+      "currency": "INR",
+      "strict_budget": true,
+      "preferences": {
+        "pace": "moderate",
+        "dietary": ["vegetarian"],
+        "activity_preferences": ["historical monuments", "street photography", "local cuisine"],
+        "hotel_star_rating": 3,
+        "hotel_amenities": ["wifi", "air conditioning"],
+        "preferred_airlines": ["IndiGo", "Air India"]
+      },
+      "constraints": {
+        "max_travel_time_hours": 3.5,
+        "max_flight_stops": 0,
+        "accessibility_needed": false,
+        "must_visit_landmarks": ["India Gate", "Qutub Minar"]
+      },
+      "expected_tools": ["mcp__flights__search_flights", "mcp__hotels__search_hotels", "mcp__weather__get_forecast"]
+    },
+    {
+      "id": "TS-02-COUPLE-INTL",
+      "title": "Couple Romantic International Getaway",
+      "origin": "Delhi",
+      "destination": "Paris",
+      "start_date": "2026-11-05",
+      "end_date": "2026-11-11",
+      "travellers": {"adults": 2, "children": 0},
+      "budget": 350000.0,
+      "currency": "INR",
+      "strict_budget": true,
+      "preferences": {
+        "pace": "relaxed",
+        "dietary": ["none"],
+        "activity_preferences": ["art museums", "fine dining", "river cruise"],
+        "hotel_star_rating": 4,
+        "hotel_amenities": ["breakfast included", "central location", "romantic view"],
+        "preferred_airlines": ["Air France", "Emirates"]
+      },
+      "constraints": {
+        "max_travel_time_hours": 12.0,
+        "max_flight_stops": 1,
+        "accessibility_needed": false,
+        "must_visit_landmarks": ["Eiffel Tower", "Louvre Museum", "Seine River"]
+      },
+      "expected_tools": ["mcp__flights__search_flights", "mcp__hotels__search_hotels", "web_search", "mcp__weather__get_forecast"]
+    },
+    {
+      "id": "TS-03-FAMILY-KIDS",
+      "title": "Family Trip with Children to Theme Park Destination",
+      "origin": "Bangalore",
+      "destination": "Singapore",
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-20",
+      "travellers": {"adults": 2, "children": 2},
+      "budget": 400000.0,
+      "currency": "INR",
+      "strict_budget": true,
+      "preferences": {
+        "pace": "family-friendly",
+        "dietary": ["kid-friendly", "vegetarian-options"],
+        "activity_preferences": ["theme parks", "aquarium", "gardens", "interactive science"],
+        "hotel_star_rating": 4,
+        "hotel_amenities": ["swimming pool", "family suite", "breakfast included"],
+        "preferred_airlines": ["Singapore Airlines", "Air India"]
+      },
+      "constraints": {
+        "max_travel_time_hours": 6.0,
+        "max_flight_stops": 0,
+        "accessibility_needed": true,
+        "stroller_accessible": true,
+        "must_visit_landmarks": ["Gardens by the Bay", "Sentosa Island", "Universal Studios"]
+      },
+      "expected_tools": ["mcp__flights__search_flights", "mcp__hotels__search_hotels", "mcp__weather__get_forecast"]
+    },
+    {
+      "id": "TS-04-GROUP-FRIENDS",
+      "title": "Group of Friends Beach & Adventure Retreat",
+      "origin": "Pune",
+      "destination": "Goa",
+      "start_date": "2026-11-20",
+      "end_date": "2026-11-24",
+      "travellers": {"adults": 4, "children": 0},
+      "budget": 80000.0,
+      "currency": "INR",
+      "strict_budget": true,
+      "preferences": {
+        "pace": "active",
+        "dietary": ["seafood", "vegetarian"],
+        "activity_preferences": ["scuba diving", "beach shacks", "sunset cruise", "heritage forts"],
+        "hotel_star_rating": 3,
+        "hotel_amenities": ["pool", "near beach", "wifi"],
+        "preferred_airlines": ["IndiGo", "SpiceJet"]
+      },
+      "constraints": {
+        "max_travel_time_hours": 4.0,
+        "max_flight_stops": 0,
+        "accessibility_needed": false,
+        "must_visit_landmarks": ["Anjuna Beach", "Aguada Fort", "Palolem Beach"]
+      },
+      "expected_tools": ["mcp__flights__search_flights", "mcp__hotels__search_hotels", "mcp__weather__get_forecast"]
+    },
+    {
+      "id": "TS-05-LOW-BUDGET",
+      "title": "Low-Budget Student Cultural Trip",
+      "origin": "Chennai",
+      "destination": "Pondicherry",
+      "start_date": "2026-10-18",
+      "end_date": "2026-10-20",
+      "travellers": {"adults": 1, "children": 0},
+      "budget": 7500.0,
+      "currency": "INR",
+      "strict_budget": true,
+      "preferences": {
+        "pace": "moderate",
+        "dietary": ["south indian", "budget vegetarian"],
+        "activity_preferences": ["french quarter walking tour", "promenade beach", "ashram visit"],
+        "hotel_star_rating": 2,
+        "hotel_amenities": ["wifi", "clean linen"],
+        "preferred_airlines": []
+      },
+      "constraints": {
+        "max_travel_time_hours": 3.5,
+        "max_flight_stops": 0,
+        "accessibility_needed": false,
+        "must_visit_landmarks": ["Sri Aurobindo Ashram", "White Town Promenade"]
+      },
+      "expected_tools": ["mcp__hotels__search_hotels", "web_search", "mcp__weather__get_forecast"]
+    },
+    {
+      "id": "TS-06-MID-BUDGET-SCENIC",
+      "title": "Medium-Budget Scenic Hill Station Tour",
+      "origin": "Kolkata",
+      "destination": "Darjeeling",
+      "start_date": "2026-10-25",
+      "end_date": "2026-10-29",
+      "travellers": {"adults": 2, "children": 0},
+      "budget": 45000.0,
+      "currency": "INR",
+      "strict_budget": true,
+      "preferences": {
+        "pace": "relaxed",
+        "dietary": ["tibetan", "indian"],
+        "activity_preferences": ["tea plantation tour", "toy train ride", "sunrise viewing"],
+        "hotel_star_rating": 3,
+        "hotel_amenities": ["mountain view", "heating", "breakfast"],
+        "preferred_airlines": ["IndiGo", "SpiceJet"]
+      },
+      "constraints": {
+        "max_travel_time_hours": 5.0,
+        "max_flight_stops": 0,
+        "accessibility_needed": false,
+        "must_visit_landmarks": ["Tiger Hill", "Batasia Loop", "Happy Valley Tea Estate"]
+      },
+      "expected_tools": ["mcp__flights__search_flights", "mcp__hotels__search_hotels", "mcp__weather__get_forecast"]
+    },
+    {
+      "id": "TS-07-HIGH-BUDGET-LUXURY",
+      "title": "High-Budget Luxury Explorer Trip",
+      "origin": "Mumbai",
+      "destination": "Tokyo",
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-08",
+      "travellers": {"adults": 2, "children": 0},
+      "budget": 600000.0,
+      "currency": "INR",
+      "strict_budget": false,
+      "preferences": {
+        "pace": "curated",
+        "dietary": ["omakase", "pescatarian"],
+        "activity_preferences": ["private city guide", "onsen experience", "michelin dining", "art galleries"],
+        "hotel_star_rating": 5,
+        "hotel_amenities": ["spa", "concierge", "panoramic skyline view"],
+        "preferred_airlines": ["ANA", "Japan Airlines"]
+      },
+      "constraints": {
+        "max_travel_time_hours": 14.0,
+        "max_flight_stops": 1,
+        "accessibility_needed": false,
+        "must_visit_landmarks": ["Shinjuku Gyoen", "teamLab Planets", "Meiji Shrine"]
+      },
+      "expected_tools": ["mcp__flights__search_flights", "mcp__hotels__search_hotels", "web_search", "mcp__weather__get_forecast"]
+    },
+    {
+      "id": "TS-08-SHORT-2DAY-HERITAGE",
+      "title": "Short 2-Day Weekend Heritage Odyssey",
+      "origin": "Hyderabad",
+      "destination": "Hampi",
+      "start_date": "2026-11-14",
+      "end_date": "2026-11-15",
+      "travellers": {"adults": 2, "children": 0},
+      "budget": 16000.0,
+      "currency": "INR",
+      "strict_budget": true,
+      "preferences": {
+        "pace": "fast",
+        "dietary": ["vegetarian"],
+        "activity_preferences": ["unesco ruins", "boulder hiking", "coracle boat ride"],
+        "hotel_star_rating": 3,
+        "hotel_amenities": ["ac", "parking", "restaurant"],
+        "preferred_airlines": []
+      },
+      "constraints": {
+        "max_travel_time_hours": 6.0,
+        "max_flight_stops": 0,
+        "accessibility_needed": false,
+        "must_visit_landmarks": ["Virupaksha Temple", "Vijaya Vittala Temple", "Lotus Mahal"]
+      },
+      "expected_tools": ["mcp__hotels__search_hotels", "web_search", "mcp__weather__get_forecast"]
+    },
+    {
+      "id": "TS-09-7DAY-IMMERSIVE",
+      "title": "7-Day Immersive Backwaters & Hills Journey",
+      "origin": "Delhi",
+      "destination": "Kochi",
+      "start_date": "2026-12-01",
+      "end_date": "2026-12-07",
+      "travellers": {"adults": 2, "children": 0},
+      "budget": 95000.0,
+      "currency": "INR",
+      "strict_budget": true,
+      "preferences": {
+        "pace": "balanced",
+        "dietary": ["kerala cuisine", "vegan friendly"],
+        "activity_preferences": ["houseboat cruise", "kathakali dance", "spice plantation", "ayurvedic spa"],
+        "hotel_star_rating": 4,
+        "hotel_amenities": ["spa", "ayurveda centre", "breakfast included"],
+        "preferred_airlines": ["Air India", "IndiGo"]
+      },
+      "constraints": {
+        "max_travel_time_hours": 4.5,
+        "max_flight_stops": 0,
+        "accessibility_needed": false,
+        "must_visit_landmarks": ["Fort Kochi Chinese Fishing Nets", "Alleppey Backwaters", "Mattancherry Palace"]
+      },
+      "expected_tools": ["mcp__flights__search_flights", "mcp__hotels__search_hotels", "mcp__weather__get_forecast"]
+    },
+    {
+      "id": "TS-10-MULTI-CITY-HERITAGE",
+      "title": "Multi-City Royal Heritage Circuit",
+      "origin": "Bangalore",
+      "destination": "Jaipur",
+      "destinations": ["Jaipur", "Udaipur", "Jodhpur"],
+      "start_date": "2026-11-10",
+      "end_date": "2026-11-17",
+      "travellers": {"adults": 2, "children": 0},
+      "budget": 140000.0,
+      "currency": "INR",
+      "strict_budget": true,
+      "preferences": {
+        "pace": "moderate",
+        "dietary": ["rajasthani thali", "vegetarian"],
+        "activity_preferences": ["palace visits", "fort explorations", "lake boat tour", "folk musical shows"],
+        "hotel_star_rating": 4,
+        "hotel_amenities": ["heritage property", "swimming pool", "breakfast"],
+        "preferred_airlines": ["IndiGo", "Vistara"]
+      },
+      "constraints": {
+        "max_travel_time_hours": 5.0,
+        "max_flight_stops": 1,
+        "accessibility_needed": false,
+        "city_count": 3,
+        "must_visit_landmarks": ["Amber Fort", "City Palace Udaipur", "Mehrangarh Fort"]
+      },
+      "expected_tools": ["mcp__flights__search_flights", "mcp__hotels__search_hotels", "web_search", "mcp__weather__get_forecast"]
+    },
+    {
+      "id": "TS-11-ACCESSIBILITY-STRICT",
+      "title": "Wheelchair Accessible Historic City Tour",
+      "origin": "Mumbai",
+      "destination": "Ahmedabad",
+      "start_date": "2026-10-22",
+      "end_date": "2026-10-24",
+      "travellers": {"adults": 1, "children": 0},
+      "budget": 25000.0,
+      "currency": "INR",
+      "strict_budget": true,
+      "preferences": {
+        "pace": "relaxed",
+        "dietary": ["jain vegetarian", "pure veg"],
+        "activity_preferences": ["textile museum", "gandhi ashram", "stepwell viewing"],
+        "hotel_star_rating": 4,
+        "hotel_amenities": ["wheelchair accessible elevator", "roll-in shower", "accessible parking"],
+        "preferred_airlines": ["IndiGo"]
+      },
+      "constraints": {
+        "max_travel_time_hours": 2.0,
+        "max_flight_stops": 0,
+        "accessibility_needed": true,
+        "step_free_access": true,
+        "must_visit_landmarks": ["Sabarmati Ashram", "Adalaj Stepwell"]
+      },
+      "expected_tools": ["mcp__flights__search_flights", "mcp__hotels__search_hotels", "mcp__weather__get_forecast"]
+    },
+    {
+      "id": "TS-12-STRICT-DURATION-BUDGET",
+      "title": "Ultra-Tight 48-Hour Corporate Workation",
+      "origin": "Delhi",
+      "destination": "Bengaluru",
+      "start_date": "2026-10-15",
+      "end_date": "2026-10-17",
+      "travellers": {"adults": 1, "children": 0},
+      "budget": 30000.0,
+      "currency": "INR",
+      "strict_budget": true,
+      "preferences": {
+        "pace": "fast",
+        "dietary": ["healthy", "coffee enthusiast"],
+        "activity_preferences": ["tech park access", "microbrewery dinner", "cubbon park morning jog"],
+        "hotel_star_rating": 4,
+        "hotel_amenities": ["high speed wifi", "business centre", "ergonomic chair", "ironing board"],
+        "preferred_airlines": ["Air India", "IndiGo"]
+      },
+      "constraints": {
+        "max_travel_time_hours": 3.0,
+        "max_flight_stops": 0,
+        "accessibility_needed": false,
+        "must_visit_landmarks": ["Cubbon Park", "Indiranagar 100ft Road"]
+      },
+      "expected_tools": ["mcp__flights__search_flights", "mcp__hotels__search_hotels", "mcp__weather__get_forecast"]
+    }
+  ]
+}

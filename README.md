@@ -689,6 +689,60 @@ Phase 15 guarantees enterprise-grade cost efficiency and latency awareness throu
 
 ---
 
+## 🧪 Phase 16: Comprehensive Testing & Evaluation Framework
+
+Phase 16 provides an enterprise-grade testing and evaluation infrastructure measuring software correctness, quality, reliability, safety, and efficiency across all multi-agent travel workflows.
+
+### 1. Three-Layer Testing Strategy
+- **Unit Tests**: Pure Python functions, financial math, Pydantic schemas, and guardrails in total isolation.
+- **Integration Tests**: Specialized agents, MCP tool gateways, providers, and database services with mock adapters.
+- **End-to-End Scenario Tests**: Multi-agent graph workflows, dynamic replanning cycles, and HITL authorization pauses.
+
+### 2. Versioned Synthetic Evaluation Datasets (`evaluation/datasets/`)
+Contains 31 curated synthetic scenarios (zero real personal data):
+- **`travel_scenarios.json`** (12 scenarios): Solo domestic, couple international, family with kids, group of friends, low-budget student, mid-budget scenic, luxury, 2-day heritage, 7-day backwaters, multi-city cultural, strict accessibility, and corporate workation.
+- **`adversarial_scenarios.json`** (7 scenarios): Direct instruction overrides, indirect web injection, secret exfiltration, autonomous HITL bypass, cloud metadata SSRF, unauthorized tool calls, and malicious RAG document injections.
+- **`replanning_scenarios.json`** (6 scenarios): Flight cancellations, hotel unavailable, severe cyclones, museum weekly closures, 35% budget slashes, and 48-hour date shifts.
+- **`security_scenarios.json`** (6 scenarios): Cross-user trip isolation (RLS), unauthorized booking attempts, expired approval reuse, double-click duplicate execution races, cloud metadata endpoints, and cross-tenant cache keys.
+
+### 3. Deterministic Evaluators vs. Qualitative Judge
+- **Deterministic Evaluators (`evaluation/evaluators.py`)**:
+  - `BUDGET_ADHERENCE`: Exact Python arithmetic (`estimated_cost <= budget_limit`). Zero LLM subjective judgment permitted.
+  - `CONSTRAINT_SATISFACTION_RATE`: Multi-dimensional constraint matching (budget, flight stops, max travel hours, preferred airlines, hotel stars, dietary, accessibility, and landmarks).
+  - `ITINERARY_VALIDITY_RATE`: Evaluates date sequences, positive durations, flight arrival before hotel check-in, and duplicate avoidance.
+  - `TOOL_SELECTION_ACCURACY`: Validates tool domain matching, required arguments, and absence of unauthorized tool invocations.
+  - `HALLUCINATION_RATE`: Verifies system admits unavailable data ("I don't have enough verified information") rather than fabricating answers.
+  - `PROMPT_INJECTION_BLOCK_RATE`: Evaluates input guardrail blocking and untrusted content defensive boundary encapsulation.
+  - `SECURITY_TEST_PASS_RATE`: Verifies RLS tenant isolation, secret redaction, and SSRF private subnet protection.
+  - `FAILURE_RECOVERY_RATE`: Verifies graceful degradation on provider timeout or payload errors without corrupting state.
+  - `REPLAN_SUCCESS_RATE` & `REPLAN_SELECTIVITY`: Assesses replanning success and selective reuse of unaffected graph nodes.
+  - `APPROVAL_ENFORCEMENT_RATE` & `DUPLICATE_EXECUTION_RATE`: Verifies transactional actions require approval and duplicate execution rate is exactly 0.0%.
+  - `Cost & Latency Percentiles`: Computes deterministic P50, P95, and P99 latency percentiles.
+- **Qualitative LLM-as-a-Judge (`evaluation/llm_judge.py`)**:
+  - Applied ONLY to subjective dimensions: itinerary usefulness and explanation clarity.
+  - Strictly prohibited from evaluating arithmetic, dates, security, approvals, or permissions.
+
+### 4. Zero-Tolerance Critical Failure Policy
+Any violation of fundamental security, authorization, or integrity rules (unauthorized booking, payment without approval, secret leakage, cross-user data exposure, arbitrary code execution, approval bypass, duplicate transactional execution, SSRF exploit) immediately triggers a `CriticalFailure` and sets `evaluation status = FAILED`, regardless of aggregate metric percentages.
+
+### 5. Streamlit Evaluation Dashboard (`app/pages/evaluation.py`)
+- Real-time evaluation runs, metrics overview cards, quality gauges, reliability/security metrics, latency percentiles, and scenario drilldowns comparing Expected vs. Actual outcomes with failure reasons and trace IDs.
+
+### 6. Running Tests & Evaluations
+
+```bash
+# Run all unit, integration, and scenario tests (pytest)
+python3 -m pytest tests/ -v
+
+# Run the Phase 16 evaluation framework tests specifically
+python3 -m pytest tests/test_evaluation_framework.py -v
+
+# Run the comprehensive 31-scenario evaluation runner from CLI
+python3 -m evaluation.runner
+```
+
+---
+
 ## 🛡️ Security & Privacy Principles
 
 1. **Zero Secret Leaks**: Secrets and service keys are never committed to version control.

@@ -14,6 +14,7 @@ from app.pages.sources import render_sources_page
 from app.pages.agent_trace import render_agent_trace_page
 from app.pages.settings import render_settings_page
 from app.pages.approvals import render_approvals_page
+from app.pages.evaluation import render_evaluation_page
 
 __all__ = [
     "render_dashboard_page",
@@ -30,4 +31,5 @@ __all__ = [
     "render_agent_trace_page",
     "render_settings_page",
     "render_approvals_page",
+    "render_evaluation_page",
 ]

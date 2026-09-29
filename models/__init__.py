@@ -193,3 +193,23 @@ from models.approval import (
     ApprovalAuditEvent,
 )
 
+from models.evaluation import (
+    ScenarioCategory,
+    CriticalFailureType,
+    CriticalFailure,
+    MetricScore,
+    ScenarioEvaluationResult,
+    LLMJudgeResult,
+    EvaluationReport,
+)
+
+__all__.extend([
+    "ScenarioCategory",
+    "CriticalFailureType",
+    "CriticalFailure",
+    "MetricScore",
+    "ScenarioEvaluationResult",
+    "LLMJudgeResult",
+    "EvaluationReport",
+])
+

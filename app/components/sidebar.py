@@ -20,6 +20,7 @@ PAGES = [
     ("Budget", "💰"),
     ("Sources", "📚"),
     ("Agent Trace", "🔍"),
+    ("Evaluation", "🧪"),
     ("Settings", "⚙️"),
 ]
 

@@ -18,6 +18,7 @@ from app.pages import (
     render_agent_trace_page,
     render_settings_page,
     render_approvals_page,
+    render_evaluation_page,
 )
 
 
@@ -35,6 +36,7 @@ PAGE_DISPATCHER = {
     "Budget": render_budget_page,
     "Sources": render_sources_page,
     "Agent Trace": render_agent_trace_page,
+    "Evaluation": render_evaluation_page,
     "Settings": render_settings_page,
 }
 

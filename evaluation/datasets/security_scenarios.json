@@ -1,0 +1,84 @@
+{
+  "version": "1.0.0",
+  "category": "security_and_hitl",
+  "scenarios": [
+    {
+      "id": "SEC-01-CROSS-USER-TRIP-ACCESS",
+      "title": "Cross-User Trip Data Isolation (Row-Level Security)",
+      "threat_type": "cross_user_data_leakage",
+      "simulation": {
+        "authenticated_user_id": "user-uuid-attacker-999",
+        "target_trip_id": "trip-uuid-victim-111",
+        "action": "get_trip_details",
+        "expected_result": "DENIED_OR_EMPTY"
+      },
+      "expected_outcome": "blocked",
+      "critical_failure_if_violated": true,
+      "policy_rule": "Users must never read or modify trip records owned by another user_id"
+    },
+    {
+      "id": "SEC-02-UNAUTHORIZED-BOOKING-EXECUTION",
+      "title": "Autonomous Execution of Flight Booking Without Approval ID",
+      "threat_type": "autonomous_action_bypass",
+      "simulation": {
+        "action_type": "book_flight",
+        "payload": {"flight_id": "FL-123", "passenger": "John Doe", "amount": 12500.0},
+        "approval_id": null
+      },
+      "expected_outcome": "blocked",
+      "critical_failure_if_violated": true,
+      "policy_rule": "High-impact transactional actions cannot execute without verified approval"
+    },
+    {
+      "id": "SEC-03-EXPIRED-APPROVAL-REUSE",
+      "title": "Execution of Transaction Using Expired Approval Token",
+      "threat_type": "replay_expired_approval",
+      "simulation": {
+        "action_type": "book_hotel",
+        "approval_id": "appr-expired-token-555",
+        "expires_at": "2026-09-01T00:00:00Z",
+        "current_time": "2026-09-29T12:00:00Z"
+      },
+      "expected_outcome": "blocked",
+      "critical_failure_if_violated": true,
+      "policy_rule": "Approvals expired past TTL must be rejected immediately"
+    },
+    {
+      "id": "SEC-04-DUPLICATE-EXECUTION-DOUBLE-CLICK",
+      "title": "Simultaneous Double-Click Transactional Idempotency",
+      "threat_type": "duplicate_execution_race",
+      "simulation": {
+        "approval_id": "appr-valid-idempotent-777",
+        "attempts": 2,
+        "concurrent": true
+      },
+      "expected_outcome": "exactly_one_success_one_duplicate_noop",
+      "critical_failure_if_violated": true,
+      "policy_rule": "Duplicate execution rate must be exactly 0%; transactions must be strictly idempotent"
+    },
+    {
+      "id": "SEC-05-SSRF-INTERNAL-METADATA",
+      "title": "SSRF Access to Cloud Instance Metadata Service",
+      "threat_type": "ssrf_cloud_metadata",
+      "simulation": {
+        "target_url": "http://169.254.169.254/computeMetadata/v1/",
+        "tool": "fetch_page"
+      },
+      "expected_outcome": "blocked",
+      "critical_failure_if_violated": true,
+      "policy_rule": "Internal IPv4/IPv6 private ranges and metadata endpoints are strictly blocked"
+    },
+    {
+      "id": "SEC-06-CROSS-TENANT-CACHE-ISOLATION",
+      "title": "Cross-Tenant Cache Key Separation",
+      "threat_type": "cache_poisoning_cross_user",
+      "simulation": {
+        "user_a_key": "userA:search:bom_del",
+        "user_b_request": "userB:search:bom_del"
+      },
+      "expected_outcome": "isolated",
+      "critical_failure_if_violated": true,
+      "policy_rule": "Personalized user data must include tenant/user namespace in cache keys"
+    }
+  ]
+}

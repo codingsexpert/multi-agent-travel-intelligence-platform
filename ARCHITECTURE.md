@@ -1116,3 +1116,106 @@ The platform enforces deterministic efficiency and cost minimization across all 
 
 ### 15.6 Streamlit Cost & Performance Dashboard (`app/pages/agent_trace.py`)
 - **Section 9** exposes real-time cost, token utilization, model breakdown, agent breakdown, cache hit rates, duplicate prevention metrics, and replan reuse statistics.
+
+---
+
+## 16. Comprehensive Testing & Evaluation Architecture
+
+The platform incorporates an exhaustive, multi-layered quality assurance and evaluation architecture designed to rigorously test both deterministic software components and AI-specific non-deterministic behaviors.
+
+```mermaid
+graph TD
+    subgraph TestingAndEvaluation [Quality & Evaluation Framework]
+        UnitTests[Unit Tests - pytest]
+        IntegrationTests[Integration Tests - Mock MCP & Providers]
+        ScenarioTests[E2E Scenario Tests - LangGraph Workflow]
+        
+        EvalRunner[Evaluation Runner - evaluation.runner]
+        
+        subgraph Datasets [Versioned Synthetic Datasets]
+            TravelDS[travel_scenarios.json - 12 Scenarios]
+            AdvDS[adversarial_scenarios.json - 7 Scenarios]
+            RepDS[replanning_scenarios.json - 6 Scenarios]
+            SecDS[security_scenarios.json - 6 Scenarios]
+        end
+        
+        subgraph DeterministicEvaluators [Deterministic Rule Evaluators]
+            BudgetEval[BudgetEvaluator - Pure Arithmetic]
+            ConstraintEval[ConstraintEvaluator - Constraints & Landmark Matching]
+            ItinEval[ItineraryEvaluator - Temporal Feasibility & Ordering]
+            ToolEval[ToolCorrectnessEvaluator - Domain MCP Routing]
+            SecEval[SecurityEvaluator - RLS, SSRF & Isolation]
+            HitlEval[HITLEvaluator - Approval & Idempotency]
+        end
+        
+        subgraph QualitativeJudge [LLM-as-a-Judge - Heuristic/Offline]
+            JudgeEval[QualitativeLLMJudge - Usefulness & Clarity Only]
+        end
+        
+        EvalRunner --> Datasets
+        Datasets --> DeterministicEvaluators
+        Datasets --> QualitativeJudge
+        
+        DeterministicEvaluators --> CriticalPolicy{Critical Failure Triggered?}
+        CriticalPolicy -- Yes --> SuiteFailed[Evaluation Status = FAILED]
+        CriticalPolicy -- No --> AggregateMetrics[Calculate Rates & Latency Percentiles]
+        
+        AggregateMetrics --> StreamlitDashboard[Evaluation Dashboard - app/pages/evaluation.py]
+        AggregateMetrics --> LangSmithSync[Optional LangSmith Dataset Sync]
+    end
+```
+
+### 16.1 Three-Layer Testing Hierarchy
+1. **Unit Layer (`tests/`)**:
+   - Tests individual pure Python functions, mathematical budgets, Pydantic schemas, and guardrail regexes in complete isolation.
+2. **Integration Layer (`tests/`)**:
+   - Tests interaction between agents, MCP tool gateways, providers, and database services using deterministic mock adapters.
+3. **End-to-End Scenario Layer (`tests/test_evaluation_framework.py`)**:
+   - Executes multi-step workflows end-to-end, testing graph state transitions, dynamic replanning, and HITL pauses.
+
+### 16.2 Versioned Synthetic Evaluation Datasets (`evaluation/datasets/`)
+Contains 31 curated synthetic scenarios (zero real personal data):
+- **`travel_scenarios.json`** (12 scenarios): Solo domestic, couple international, family with children, group of friends, low-budget student, mid-budget scenic, luxury, 2-day heritage, 7-day backwaters, multi-city cultural, strict accessibility, and corporate workation.
+- **`adversarial_scenarios.json`** (7 scenarios): Direct instruction overrides, indirect web injection, secret exfiltration, autonomous HITL bypass, cloud metadata SSRF, unauthorized tool calls, and malicious RAG document injections.
+- **`replanning_scenarios.json`** (6 scenarios): Flight cancellations, hotel unavailable, severe cyclones, museum weekly closures, 35% budget slashes, and 48-hour date shifts.
+- **`security_scenarios.json`** (6 scenarios): Cross-user trip isolation (RLS), unauthorized booking attempts, expired approval reuse, double-click duplicate execution races, cloud metadata endpoints, and cross-tenant cache keys.
+
+### 16.3 Deterministic vs. Qualitative Evaluation
+- **Deterministic Evaluators (`evaluation/evaluators.py`)**:
+  - `BUDGET_ADHERENCE`: Arithmetic comparison (`estimated_cost <= budget_limit`). The LLM is strictly forbidden from replacing arithmetic.
+  - `CONSTRAINT_SATISFACTION_RATE`: Multi-dimensional constraint matching (budget, flight stops, max travel hours, preferred airlines, hotel stars, dietary, accessibility, and landmarks).
+  - `ITINERARY_VALIDITY_RATE`: Evaluates date sequences, positive durations, flight arrival before hotel check-in, and duplicate avoidance.
+  - `TOOL_SELECTION_ACCURACY`: Validates tool domain matching, required arguments, and absence of unauthorized tool invocations.
+  - `HALLUCINATION_RATE`: Verifies system admits unavailable data ("I don't have enough verified information") rather than fabricating answers.
+  - `PROMPT_INJECTION_BLOCK_RATE`: Evaluates input guardrail blocking and untrusted content defensive boundary encapsulation.
+  - `SECURITY_TEST_PASS_RATE`: Verifies RLS tenant isolation, secret redaction, and SSRF private subnet protection.
+  - `FAILURE_RECOVERY_RATE`: Verifies graceful degradation on provider timeout or payload errors without corrupting state.
+  - `REPLAN_SUCCESS_RATE` & `REPLAN_SELECTIVITY`: Assesses replanning success and selective reuse of unaffected graph nodes.
+  - `APPROVAL_ENFORCEMENT_RATE` & `DUPLICATE_EXECUTION_RATE`: Verifies transactional actions require approval and duplicate execution rate is exactly 0.0%.
+  - `Cost & Latency Percentiles`: Computes P50, P95, and P99 latency percentiles deterministically.
+- **Qualitative LLM-as-a-Judge (`evaluation/llm_judge.py`)**:
+  - Applied ONLY to subjective dimensions: itinerary usefulness and explanation clarity.
+  - Strictly prohibited from evaluating arithmetic, dates, security, approvals, or permissions.
+
+### 16.4 Zero-Tolerance Critical Failure Policy
+Any violation of fundamental security, authorization, or integrity rules:
+- Unauthorized booking execution
+- Payment execution without human approval
+- Secret credential leakage
+- Cross-user data exposure
+- Arbitrary code/tool execution
+- Approval bypass or replay
+- Duplicate transactional execution (idempotency violation)
+- SSRF private/metadata network access
+
+Immediately triggers a `CriticalFailure` and sets `evaluation status = FAILED`, regardless of aggregate metric percentages.
+
+### 16.5 Streamlit Evaluation Dashboard (`app/pages/evaluation.py`)
+Provides an interactive evaluation cockpit displaying:
+- Top-level status banner with Critical Failure alerts
+- Quality metrics: Constraint satisfaction, budget adherence, itinerary validity, tool accuracy, hallucination rate
+- Reliability & Recovery: API recovery, dynamic replan success, replan selectivity, state consistency
+- Security & HITL: Prompt injection block rate, RLS pass rate, HITL enforcement, 0.0% duplicate execution
+- Performance: P50, P95, P99 latency percentiles, average tokens, cost per workflow, and cache hit rates
+- Scenario Drilldown: Filter by scenario category, view expected vs actual outcomes, failure reasons, and trace IDs
+- Live "Re-run Evaluation Suite" button for immediate on-demand benchmarking
