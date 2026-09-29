@@ -518,21 +518,33 @@ This development plan breaks down the construction of the platform into **18 dis
 
 ---
 
-## Phase 13: Human-in-the-Loop (HITL) Gateways
-- **Objective**: Implement checkpoint interrupts requiring explicit human approval for sensitive financial or booking actions.
+## Phase 13: Human-in-the-Loop (HITL) Gateways (Completed)
+- **Objective**: Implement a production-grade Human-in-the-Loop authorization gate that strictly governs high-impact, transactional operations (flight/hotel/activity bookings, cancellations, payments) while preserving autonomous read-only intelligence.
 - **Implementation Tasks**:
-  1. Implement `ApprovalGate` node in `src/graph/workflow.py` using LangGraph's `interrupt()`.
-  2. Persist graph checkpoints in Supabase checkpointer.
-  3. Implement Streamlit interactive approval modal (`src/ui/components/approval_modal.py`):
-     - Displays itemized financial commitment, non-refundable policies, and confirmation button.
-  4. Implement resume handler calling `graph.invoke(Command(resume=...))`.
+  1. Implemented strongly typed Pydantic models in `models/approval.py` (`ActionProposal`, `ApprovalRequest`, `ApprovalDecision`, `ActionExecutionResult`, `ApprovalAuditEvent`, and `classify_action_risk`).
+  2. Implemented Supabase migration `supabase/migrations/20260928000005_hitl_approvals.sql` with tables for proposals, requests, executions, and audit events protected by strict Row Level Security (RLS).
+  3. Created safe mock transactional adapters in `mcp/transactional_providers.py` (`MockFlightBookingProvider`, `MockHotelBookingProvider`, `MockActivityBookingProvider`) clearly badged `DEMO / MOCK`.
+  4. Implemented `ApprovalRepository` and updated `MockDataStore` in `repositories/approval_repository.py` and `repositories/mock_store.py`.
+  5. Implemented `ApprovalService` in `services/approval_service.py` managing creation, pending retrieval, server-side expiry, state version matching, human decision recording, and audit logging.
+  6. Implemented `ActionExecutionService` in `services/action_execution_service.py` enforcing idempotency, tool authorization, mock provider execution, and audit logging.
+  7. Integrated Dynamic Replanning with HITL in `services/replanning_service.py` to automatically invalidate stale proposals when the itinerary version increments.
+  8. Integrated LangGraph HITL gate in `graph/state.py` and `graph/workflow.py` (`approval_gate_node` and `resume_graph_after_approval`) pausing execution on unapproved high-impact operations.
+  9. Implemented dedicated Streamlit Approvals page (`app/pages/approvals.py`), updated navigation in `app/main.py` and `app/components/sidebar.py`, and added HITL lifecycle tracking to `app/pages/agent_trace.py`.
+  10. Built comprehensive test suite in `tests/test_hitl.py` covering all 24 required test scenarios.
 - **Files / Components**:
-  - `src/graph/nodes/approval_node.py`, `src/ui/components/approval_modal.py`
+  - `models/approval.py`, `models/__init__.py`
+  - `supabase/migrations/20260928000005_hitl_approvals.sql`
+  - `mcp/transactional_providers.py`, `mcp/__init__.py`
+  - `repositories/approval_repository.py`, `repositories/mock_store.py`, `repositories/__init__.py`
+  - `services/approval_service.py`, `services/action_execution_service.py`, `services/replanning_service.py`, `services/__init__.py`
+  - `graph/state.py`, `graph/workflow.py`
+  - `app/pages/approvals.py`, `app/pages/__init__.py`, `app/main.py`, `app/components/sidebar.py`, `app/pages/agent_trace.py`
   - `tests/test_hitl.py`
 - **Testing Requirements**:
-  - Verify graph halts before booking, yields state to UI, and successfully resumes upon approval.
+  - 24 dedicated unit and integration tests passing (`pytest tests/test_hitl.py -v`).
+  - Total test suite: 287/287 tests passing across all 13 phases with 0 failures.
 - **Expected Output**:
-  - Controlled financial commitment flow with full human oversight.
+  - Production-grade HITL governance ensuring no real money is spent, read-only intelligence remains autonomous, and all transactional actions require explicit human approval.
 
 ---
 

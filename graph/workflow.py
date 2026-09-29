@@ -1,6 +1,6 @@
 """LangGraph StateGraph workflow definition for multi-agent travel intelligence platform."""
 
-from typing import Union, List, Literal, Dict, Any
+from typing import Union, List, Literal, Dict, Any, Optional
 from langgraph.graph import StateGraph, START, END
 from graph.state import TravelState, WorkflowStatus
 from guardrails.input import InputGuardrail
@@ -74,6 +74,146 @@ def output_guardrail_node(state: TravelState) -> Dict[str, Any]:
         "guardrail_status": current_guardrail,
     }
 
+
+
+def approval_gate_node(state: TravelState) -> Dict[str, Any]:
+    """Human-in-the-Loop Approval Gate.
+
+    Inspects pending action proposals. If any transactional/high-impact actions
+    are present and not yet approved by the user, halts the workflow with
+    WAITING_FOR_APPROVAL status so the graph never autonomously executes transactions.
+    """
+    proposals = state.get("pending_proposals") or []
+    if not proposals:
+        return {"hitl_paused": False}
+
+    from models.approval import classify_action_risk, ActionRiskLevel, ApprovalStatus
+    from services.action_execution_service import action_execution_service
+
+    for prop in proposals:
+        action_type = prop.get("action_type", "")
+        risk = classify_action_risk(action_type)
+        status = prop.get("status", ApprovalStatus.PENDING.value)
+
+        if risk != ActionRiskLevel.LOW and status != ApprovalStatus.APPROVED.value:
+            logger.info(
+                f"[ApprovalGate] Halting graph for human approval of action: {action_type} (risk: {risk.value})"
+            )
+            return {
+                "planning_status": WorkflowStatus.WAITING_FOR_APPROVAL.value,
+                "hitl_paused": True,
+                "hitl_pause_reason": (
+                    f"Action '{action_type}' ({risk.value} risk) requires explicit user approval before execution."
+                ),
+            }
+
+    # If proposals were approved, execute them idempotently
+    executed_bookings = list(state.get("confirmed_bookings") or [])
+    exec_history = list(state.get("execution_history") or [])
+
+    for prop in proposals:
+        if prop.get("status") == ApprovalStatus.APPROVED.value:
+            prop_id = prop.get("proposal_id")
+            user_id = state.get("user_id") or "mock-user-123"
+            curr_ver = state.get("itinerary_version", 1)
+            try:
+                res = action_execution_service.execute_proposal(
+                    proposal_id=prop_id,
+                    user_id=user_id,
+                    current_trip_version=curr_ver,
+                )
+                exec_history.append(res.model_dump())
+                if res.status == ApprovalStatus.COMPLETED and res.confirmation_code:
+                    executed_bookings.append({
+                        "proposal_id": prop_id,
+                        "action_type": prop.get("action_type"),
+                        "confirmation_code": res.confirmation_code,
+                        "details": res.result_payload,
+                    })
+            except Exception as e:
+                logger.error(f"[ApprovalGate] Error executing approved proposal {prop_id}: {str(e)}")
+
+    return {
+        "hitl_paused": False,
+        "planning_status": WorkflowStatus.COMPLETED.value,
+        "confirmed_bookings": executed_bookings,
+        "execution_history": exec_history,
+    }
+
+
+def resume_graph_after_approval(
+    state: TravelState,
+    approval_id: str,
+    decision: Any,
+    rejection_reason: Optional[str] = None,
+) -> TravelState:
+    """Resume workflow after human user grants or rejects an approval request."""
+    from services.approval_service import approval_service
+    from services.action_execution_service import action_execution_service
+    from models.approval import ApprovalDecision, ApprovalStatus
+
+    user_id = state.get("user_id") or "mock-user-123"
+    curr_ver = state.get("itinerary_version", 1)
+
+    dec_str = str(getattr(decision, "value", decision)).upper()
+    dec_enum = (
+        ApprovalDecision.APPROVED
+        if dec_str in ("APPROVED", "APPROVE")
+        else ApprovalDecision.REJECTED
+    )
+    req = approval_service.decide_approval(
+        approval_id=approval_id,
+        user_id=user_id,
+        decision=dec_enum,
+        rejection_reason=rejection_reason,
+        current_trip_version=curr_ver,
+    )
+
+    new_state = dict(state)
+    proposals = list(new_state.get("pending_proposals") or [])
+    updated_proposals = []
+    target_proposal = None
+
+    for p in proposals:
+        p_copy = dict(p)
+        if p_copy.get("proposal_id") == req.proposal_id:
+            p_copy["status"] = req.status.value
+            target_proposal = p_copy
+        updated_proposals.append(p_copy)
+
+    new_state["pending_proposals"] = updated_proposals
+
+    if dec_enum == ApprovalDecision.REJECTED:
+        new_state["planning_status"] = WorkflowStatus.APPROVAL_REJECTED.value
+        new_state["hitl_paused"] = False
+        new_state["hitl_pause_reason"] = f"Action proposal rejected by user: {req.rejection_reason}"
+        return new_state
+
+    # Execute approved action
+    new_state["planning_status"] = WorkflowStatus.APPROVAL_GRANTED.value
+    res = action_execution_service.execute_proposal(
+        proposal_id=req.proposal_id,
+        user_id=user_id,
+        current_trip_version=curr_ver,
+    )
+
+    history = list(new_state.get("execution_history") or [])
+    history.append(res.model_dump())
+    new_state["execution_history"] = history
+
+    if res.status == ApprovalStatus.COMPLETED and res.confirmation_code:
+        confirmed = list(new_state.get("confirmed_bookings") or [])
+        confirmed.append({
+            "proposal_id": req.proposal_id,
+            "action_type": target_proposal.get("action_type") if target_proposal else "transaction",
+            "confirmation_code": res.confirmation_code,
+            "details": res.result_payload,
+        })
+        new_state["confirmed_bookings"] = confirmed
+        new_state["planning_status"] = WorkflowStatus.COMPLETED.value
+
+    new_state["hitl_paused"] = False
+    return new_state
 
 
 def route_after_input_guardrail(state: TravelState) -> str:
@@ -163,11 +303,13 @@ def create_travel_graph():
     workflow.add_edge("activity", "research")
     workflow.add_edge("weather", "research")
 
-    # 9. Convergence Pipeline: Research -> Budget Engine -> Validator -> Output Guardrail -> END
+    # 9. Convergence Pipeline: Research -> Budget Engine -> Validator -> Output Guardrail -> Approval Gate -> END
+    workflow.add_node("approval_gate", approval_gate_node)
     workflow.add_edge("research", "budget_engine")
     workflow.add_edge("budget_engine", "validator")
     workflow.add_edge("validator", "output_guardrail")
-    workflow.add_edge("output_guardrail", END)
+    workflow.add_edge("output_guardrail", "approval_gate")
+    workflow.add_edge("approval_gate", END)
 
     return workflow.compile()
 
@@ -392,6 +534,7 @@ def create_replanning_graph():
     replan_wf.add_node("validator", validator_agent_node)
     replan_wf.add_node("itinerary_version", replan_itinerary_version_node)
     replan_wf.add_node("output_guardrail", output_guardrail_node)
+    replan_wf.add_node("approval_gate", approval_gate_node)
 
     # 2. Pipeline Sequence
     replan_wf.add_edge(START, "detect_change")
@@ -401,7 +544,8 @@ def create_replanning_graph():
     replan_wf.add_edge("budget_engine", "validator")
     replan_wf.add_edge("validator", "itinerary_version")
     replan_wf.add_edge("itinerary_version", "output_guardrail")
-    replan_wf.add_edge("output_guardrail", END)
+    replan_wf.add_edge("output_guardrail", "approval_gate")
+    replan_wf.add_edge("approval_gate", END)
 
     return replan_wf.compile()
 

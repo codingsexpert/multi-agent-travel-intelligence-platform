@@ -10,6 +10,7 @@ PAGES = [
     ("Dashboard", "📊"),
     ("New Trip", "📝"),
     ("My Trips", "📂"),
+    ("Approvals", "🛡️"),
     ("Conversation", "💬"),
     ("Itinerary", "🗓️"),
     ("Flights", "✈️"),

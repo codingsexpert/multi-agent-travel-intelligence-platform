@@ -17,6 +17,7 @@ from app.pages import (
     render_sources_page,
     render_agent_trace_page,
     render_settings_page,
+    render_approvals_page,
 )
 
 
@@ -24,6 +25,7 @@ PAGE_DISPATCHER = {
     "Dashboard": render_dashboard_page,
     "New Trip": render_new_trip_page,
     "My Trips": render_my_trips_page,
+    "Approvals": render_approvals_page,
     "Conversation": render_conversation_page,
     "Itinerary": render_itinerary_page,
     "Flights": render_flights_page,

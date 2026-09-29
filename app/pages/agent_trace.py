@@ -425,7 +425,51 @@ Agent
         st.info(f"💡 **Replan Reason**: {latest_impact.get('human_explanation')}")
 
     st.markdown("---")
-    st.markdown("### System Architecture Roster (Phase 12)")
+    st.markdown("### 🛡️ Human-in-the-Loop Approval Lifecycle (Phase 13)")
+    st.markdown(
+        "Strong safety boundaries: **Read-only intelligence is autonomous**, while **transactional actions "
+        "(bookings, payments, cancellations) strictly require explicit human approval** before execution."
+    )
+
+    col_h1, col_h2 = st.columns([3, 2])
+
+    with col_h1:
+        st.markdown("#### Execution Paradigm Breakdown")
+        hitl_lifecycle = [
+            ("Planner Agent", "AUTOMATIC", "Generates travel strategy & decomposes requirements", "✓"),
+            ("Specialized Agents (Flight/Hotel/Activity)", "AUTOMATIC", "Discovers options via read-only MCP queries", "✓"),
+            ("Budget & Validator Engines", "DETERMINISTIC", "Verifies caps and temporal consistency without LLM math", "✓"),
+            ("Action Proposal Generator", "DETERMINISTIC", "Classifies risk and generates ActionProposal", "✓"),
+            ("Approval Gate", "HUMAN APPROVAL", "Halts graph execution if risk > LOW; awaits human decision", "⏸"),
+            ("Transactional Booking Adapter", "MOCK", "Safe simulated GDS/CRS execution (no real money)", "✓"),
+        ]
+        h_table = []
+        for stage, mode, desc, icon in hitl_lifecycle:
+            h_table.append({
+                "Workflow Stage": f"{icon} {stage}",
+                "Execution Nature": mode,
+                "Governance": desc,
+            })
+        st.table(h_table)
+
+    with col_h2:
+        st.markdown("#### Active HITL State")
+        hitl_paused = travel_state.get("hitl_paused", False)
+        pause_reason = travel_state.get("hitl_pause_reason")
+        confirmed_count = len(travel_state.get("confirmed_bookings", []))
+        proposals_count = len(travel_state.get("pending_proposals", []))
+
+        if hitl_paused:
+            st.warning(f"⏸️ **Graph Paused for Approval**:\n{pause_reason or 'Transactional action pending human review.'}")
+            st.markdown("[👉 Open Approvals Page to Authorize](#)")
+        else:
+            st.success("✅ **Graph Unblocked**: No transactional actions pending human authorization.")
+
+        st.metric("Confirmed Transactions", f"{confirmed_count} (DEMO / MOCK)")
+        st.metric("Proposals Monitored", str(proposals_count))
+
+    st.markdown("---")
+    st.markdown("### System Architecture Roster (Phase 13)")
 
 
     for idx, agent in enumerate(PLANNED_AGENTS, 1):

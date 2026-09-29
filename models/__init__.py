@@ -180,3 +180,16 @@ from models.replanning import (
     ReplanningAuditRecord,
 )
 
+from models.approval import (
+    ActionRiskLevel,
+    ApprovalStatus,
+    classify_action_risk,
+    READ_ONLY_ACTIONS,
+    HIGH_IMPACT_ACTIONS,
+    ActionProposal,
+    ApprovalRequest,
+    ApprovalDecision,
+    ActionExecutionResult,
+    ApprovalAuditEvent,
+)
+

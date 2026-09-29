@@ -307,8 +307,8 @@ The platform is developed in **18 distinct phases**:
 - [x] **Phase 9: RAG Knowledge Base & Supabase pgvector** *(Completed)*
 - [x] **Phase 10: Web Search & Fresh Information Research** *(Completed)*
 - [x] **Phase 11: Production Guardrails & Security Layer** *(Completed)*
-- [ ] **Phase 12: Dynamic Replanning Engine**
-- [ ] **Phase 13: Human-in-the-Loop (HITL) Gateways**
+- [x] **Phase 12: Dynamic Replanning Engine** *(Completed)*
+- [x] **Phase 13: Human-in-the-Loop (HITL) Gateways** *(Completed)*
 - [ ] **Phase 14: LangSmith Observability & Tracing**
 - [ ] **Phase 15: Latency & Cost Optimization**
 - [ ] **Phase 16: Comprehensive Testing & Evaluation**
@@ -588,6 +588,53 @@ The Dynamic Replanning Engine allows the travel platform to react to real-time d
 
 9. **Immutable Audit Trail (`replanning_events`)**:
    - All replan transactions are persisted to Supabase with Row Level Security (RLS) guaranteeing tenant isolation.
+
+---
+
+## 🛡️ Human-in-the-Loop (HITL) Approval Workflow (Phase 13)
+
+Phase 13 implements a production-grade Human-in-the-Loop authorization gate that strictly governs high-impact, transactional operations:
+
+### Core Governance Principles:
+- **READ-ONLY INTELLIGENCE → Autonomous**: Destination research, flight comparisons, weather lookups, hotel availability, route calculation, and budget synthesis proceed autonomously.
+- **HIGH-IMPACT / TRANSACTIONAL ACTIONS → Explicit User Approval Required**: Booking flights, reserving hotels, purchasing activities/tours, cancellations, itinerary modifications, and payments strictly require explicit user authorization.
+- **NEVER Autonomous Purchases**: The platform **never** autonomously performs financial charges or live reservations.
+- **Safe Mock Providers**: Demonstrations execute via simulated booking adapters (`MockFlightBookingProvider`, `MockHotelBookingProvider`, `MockActivityBookingProvider`) clearly badged `DEMO / MOCK`.
+
+### Architecture & Execution Flow:
+
+```
+Agent Proposes Action
+         ↓
+Deterministic Risk Classification (Pure Python Logic, Zero LLM Discretion)
+         ↓
+Is Approval Required?
+   ├── NO (LOW Risk) ────→ Autonomous Execution
+   └── YES (HIGH / CRITICAL)
+              ↓
+      Generate ActionProposal & ApprovalRequest
+              ↓
+      PAUSE LangGraph (WorkflowStatus.WAITING_FOR_APPROVAL)
+              ↓
+      Human Approval UI (Explicit Review & Checkbox Confirmation)
+              ↓
+      APPROVE or REJECT Decision
+              ↓
+      Server-side Validation (Authorization, Expiry, State Version & Idempotency)
+              ↓
+      Execute Mock Transactional Adapter
+              ↓
+      Record ActionExecutionResult & Immutable Audit Trail
+              ↓
+      Resume LangGraph & Update TravelState
+```
+
+### Safety & Integrity Pillars:
+1. **Deterministic Action Classification**: No LLM decides whether an action requires approval. Python classification maps actions into `LOW`, `MEDIUM`, `HIGH`, or `CRITICAL` risk.
+2. **State-Version Protection**: Every proposal is bound to the current `state_version` (matching `itinerary_version`). If dynamic replanning advances the trip from `v1` to `v2`, all pending proposals for `v1` are automatically invalidated to prevent stale bookings.
+3. **Strict Idempotency**: Proposals carry unique `idempotency_key` tokens. Duplicate button clicks or retries safely return existing execution records without double-executing transactions.
+4. **Server-Side Expiry**: Approvals expire after a predefined window (default: 24h). Expired proposals cannot be approved or executed.
+5. **Multi-Tenant RLS & Audit Trail**: Supabase tables (`action_proposals`, `approval_requests`, `action_executions`, `approval_audit_events`) enforce PostgreSQL Row Level Security (RLS) ensuring users only view and decide their own transactions. Secrets and tokens are strictly scrubbed from audit payloads.
 
 ---
 

@@ -3,6 +3,8 @@
 from services.supabase_service import SupabaseService, supabase_service
 from services.health_service import get_health_status, SystemHealthReport, SystemComponentStatus
 from services.replanning_service import ReplanningService, replanning_service
+from services.approval_service import ApprovalService, approval_service
+from services.action_execution_service import ActionExecutionService, action_execution_service
 
 __all__ = [
     "SupabaseService",
@@ -12,4 +14,8 @@ __all__ = [
     "SystemComponentStatus",
     "ReplanningService",
     "replanning_service",
+    "ApprovalService",
+    "approval_service",
+    "ActionExecutionService",
+    "action_execution_service",
 ]

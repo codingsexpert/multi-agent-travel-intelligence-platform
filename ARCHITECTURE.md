@@ -936,14 +936,73 @@ sequenceDiagram
 
 ---
 
-## 12. Human-in-the-Loop (HITL) Architecture
+## 12. Human-in-the-Loop (HITL) Architecture (Phase 13)
 
-LangGraph provides native support for pausing graph execution via **Interrupts**:
-1. When the graph reaches a state requiring authorization (e.g. executing flight reservation, hotel booking, or paying an extra fee during replanning), the `ApprovalGate` node raises an `interrupt()`.
-2. The graph state is automatically checkpointed to the persistent database.
-3. The Streamlit UI detects the suspended state, displays the exact financial liability and itemized details, and renders **Approve** and **Reject/Modify** actions.
-4. When the user clicks **Approve**, the UI calls `graph.invoke(Command(resume={"action": "approve"}))`.
-5. The execution resumes from the exact checkpoint, completing the transaction and updating the itinerary status.
+Phase 13 establishes a production-grade Human-in-the-Loop approval gate strictly separating autonomous intelligence from high-impact transactional actions.
+
+### 12.1 Core Governance Principles
+- **Read-Only Intelligence → Autonomous**: Search queries, route calculations, hotel/flight comparisons, weather forecasts, and budget calculations execute autonomously.
+- **High-Impact / Transactional Actions → Explicit Human Approval**: Booking flights, reserving hotels, purchasing activities/tickets, cancellations, and payments strictly require explicit user approval.
+- **Zero Autonomous Purchasing**: Under no circumstances does an LLM or autonomous agent execute financial charges or live reservations.
+- **Simulated Demo Adapters**: Demo runs execute via safe mock transactional providers (`MockFlightBookingProvider`, `MockHotelBookingProvider`, `MockActivityBookingProvider`) clearly badged `DEMO / MOCK`.
+
+### 12.2 Strongly-Typed Domain Models
+All actions are strictly validated through Pydantic v2 schemas:
+- `ActionProposal`: Strongly-typed proposal with `proposal_id`, `trip_id`, `user_id`, `action_type`, `risk_level`, `parameters`, `estimated_cost`, `currency`, `state_version`, `idempotency_key`, `requires_approval`, and `status`.
+- `ApprovalRequest`: Entity tracking human review with `approval_id`, `proposal_id`, `status` (`PENDING`, `APPROVED`, `REJECTED`, `EXPIRED`, `CANCELLED`), timestamps, and `rejection_reason`.
+- `ApprovalDecision`: Explicit human decision payload (`APPROVE` or `REJECT`).
+- `ActionExecutionResult`: Idempotent execution record with `execution_id`, `confirmation_code`, `status`, `result_payload`, and `execution_duration_ms`.
+- `ApprovalAuditEvent`: Append-only audit log recording lifecycle transitions without sensitive credentials or secrets.
+
+### 12.3 Deterministic Action Risk Classification
+No LLM decides whether an action requires authorization:
+```
+Action Type               Risk Level    Requires Approval?
+search_flights            LOW           NO (Autonomous)
+compare_hotels            LOW           NO (Autonomous)
+lookup_weather            LOW           NO (Autonomous)
+calculate_route           LOW           NO (Autonomous)
+book_flight               HIGH/CRITICAL YES (Approval Gated)
+book_hotel                HIGH          YES (Approval Gated)
+purchase_activity         HIGH          YES (Approval Gated)
+cancel_booking            CRITICAL      YES (Approval Gated)
+cancel_flight             CRITICAL      YES (Approval Gated)
+process_payment           CRITICAL      YES (Approval Gated)
+```
+
+### 12.4 LangGraph HITL Gate & Execution Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Authenticated Traveler
+    participant UI as Streamlit Approvals UI
+    participant Graph as LangGraph Orchestrator
+    participant Gate as Approval Gate Node
+    participant Service as Approval & Execution Service
+    participant Mock as Mock Transactional Provider
+    participant DB as Supabase PostgreSQL (RLS)
+
+    Graph->>Gate: Evaluate proposed actions in TravelState
+    Gate-->>Graph: High-impact action found -> Pause (WAITING_FOR_APPROVAL)
+    Gate->>DB: Persist ActionProposal & ApprovalRequest
+    UI->>Service: Fetch pending approval requests
+    Service->>UI: Display cost, description, state version, expiry
+    User->>UI: Explicit Checkbox Confirmation & [Approve]
+    UI->>Service: decide_approval(APPROVE, trip_version)
+    Service->>DB: Update ApprovalRequest (APPROVED) & Audit Log
+    Service->>Service: Validate authorization, expiry, state_version, idempotency
+    Service->>Mock: Dispatch mock booking (e.g. book_flight)
+    Mock-->>Service: Return DEMO-FLT-XXXX confirmation
+    Service->>DB: Persist ActionExecutionResult & Audit Log
+    Service->>Graph: Resume workflow with confirmed booking
+    Graph-->>UI: TravelState updated (COMPLETED)
+```
+
+### 12.5 Safety & Integrity Guarantees
+1. **State Version Protection**: Proposals are bound to `state_version`. If Dynamic Replanning alters the itinerary from `v1` to `v2`, `approval_service.invalidate_proposals_for_trip` cancels all pending `v1` proposals, preventing stale reservations.
+2. **Strict Idempotency**: Proposals generate a deterministic `idempotency_key`. Subsequent clicks or network retries return the existing execution result without double execution.
+3. **Server-Side Expiry**: Approvals enforce `expires_at` (default: 24h). Expired proposals cannot be approved or executed.
+4. **Tenant Isolation (RLS)**: PostgreSQL tables (`action_proposals`, `approval_requests`, `action_executions`, `approval_audit_events`) enforce RLS policies restricting data access to `auth.uid() = user_id`.
 
 ---
 

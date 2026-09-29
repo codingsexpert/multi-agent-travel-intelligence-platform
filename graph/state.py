@@ -19,6 +19,9 @@ class WorkflowStatus(str, Enum):
     READY_FOR_ITINERARY = "READY_FOR_ITINERARY"
     READY_WITH_WARNINGS = "READY_WITH_WARNINGS"
     VALIDATION_FAILED = "VALIDATION_FAILED"
+    WAITING_FOR_APPROVAL = "WAITING_FOR_APPROVAL"
+    APPROVAL_GRANTED = "APPROVAL_GRANTED"
+    APPROVAL_REJECTED = "APPROVAL_REJECTED"
     FAILED = "FAILED"
     COMPLETED = "COMPLETED"
 
@@ -95,6 +98,14 @@ class TravelState(TypedDict, total=False):
     replan_count: int
     replan_reasons: List[str]
 
+    # --- Human-in-the-Loop Approval State (Phase 13) ---
+    pending_proposals: List[Dict[str, Any]]
+    active_approval_requests: List[Dict[str, Any]]
+    confirmed_bookings: List[Dict[str, Any]]
+    execution_history: List[Dict[str, Any]]
+    hitl_paused: bool
+    hitl_pause_reason: Optional[str]
+
 
 def create_initial_state(
     original_request: str,
@@ -167,5 +178,11 @@ def create_initial_state(
         agent_execution_modes={},
         replan_count=0,
         replan_reasons=[],
+        pending_proposals=[],
+        active_approval_requests=[],
+        confirmed_bookings=[],
+        execution_history=[],
+        hitl_paused=False,
+        hitl_pause_reason=None,
     )
 

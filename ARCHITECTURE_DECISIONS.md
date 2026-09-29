@@ -15,6 +15,8 @@ This document records the foundational architectural decisions made for the **Mu
 8. [ADR-08: Pydantic v2 for Schema Enforcement & Validation](#adr-08-pydantic-v2-for-schema-enforcement--validation)
 9. [ADR-09: LangSmith for Observability & Evaluation](#adr-09-langsmith-for-observability--evaluation)
 10. [ADR-10: Strict Boundaries — When NOT to Use an Agent](#adr-10-strict-boundaries--when-not-to-use-an-agent)
+11. [ADR-19: Dynamic Replanning Engine & Selective Execution](#adr-19-dynamic-replanning-engine-deterministic-dependency-mapping-and-selective-execution)
+12. [ADR-20: Human-in-the-Loop (HITL) Approval Workflow & Transactional Governance](#adr-20-human-in-the-loop-hitl-approval-workflow--transactional-governance)
 
 ---
 
@@ -490,6 +492,44 @@ In Phase 12, the platform requires an intelligent, deterministic Dynamic Replann
    - Configurable safeguards (`MAX_REPLAN_DEPTH = 5`, `MAX_REPLAN_EVENTS = 10`, `MAX_REPLAN_NODE_EXECUTIONS = 20`) halt runaway cascading disruptions.
 8. **Auditing & Row Level Security**:
    - Persistent `replanning_events` table in PostgreSQL with strict RLS policies ensuring users can only read and write replan logs for trips they own.
+
+---
+
+## ADR-20: Human-in-the-Loop (HITL) Approval Workflow & Transactional Governance
+
+### Context
+In autonomous AI agent systems, one of the greatest operational risks is runaway actions: an LLM deciding on its own to charge a credit card, purchase an expensive airline ticket, cancel a prepaid hotel reservation, or alter an itinerary without the traveler's explicit consent.
+In Phase 13, the platform requires an enterprise-grade safety boundary enforcing that:
+1. **Read-only intelligence is autonomous**: research, comparisons, weather forecasts, and route computations proceed without interruption.
+2. **High-impact / transactional actions require human approval**: booking flights, reserving hotels, purchasing activities, cancellations, modifications, and payments strictly require explicit user approval.
+3. **No LLM decides approval**: The approval requirement must be deterministically classified by application logic.
+4. **Idempotency is guaranteed**: Network retries, page refreshes, or duplicate button clicks must never trigger duplicate bookings or payments.
+5. **Dynamic replanning invalidates stale approvals**: An approval created for Trip Version 1 must never execute if dynamic replanning advances the trip to Version 2.
+6. **No real money is spent**: Safe mock transactional providers simulate bookings clearly badged `DEMO / MOCK`.
+
+### Decision
+1. **Deterministic Action Classification (`models/approval.py`)**:
+   - Pure Python function `classify_action_risk(action_type)` deterministically maps actions to `LOW`, `MEDIUM`, `HIGH`, or `CRITICAL` risk.
+   - Any action with risk > `LOW` automatically sets `requires_approval = True`.
+2. **Strongly-Typed Pydantic Domain Models**:
+   - `ActionProposal`, `ApprovalRequest`, `ApprovalDecision`, `ActionExecutionResult`, and `ApprovalAuditEvent`.
+   - All parameters, costs, and state versions are strictly validated before persistence.
+3. **LangGraph State Machine Pause & Resume (`graph/workflow.py`)**:
+   - An `approval_gate_node` intercepts any high-impact `ActionProposal`.
+   - If not yet approved by the authenticated human, it sets `hitl_paused = True` and transitions workflow status to `WAITING_FOR_APPROVAL`, halting the graph safely without polling loops.
+   - Upon explicit user decision in the Streamlit Approvals UI, `resume_graph_after_approval` resumes execution, verifies permissions and version matching, and executes the approved adapter.
+4. **Strict Idempotency via `idempotency_key`**:
+   - Every proposal carries a unique `idempotency_key`.
+   - Before executing an adapter, `ActionExecutionService` queries `action_executions`. If an execution already succeeded, it returns the existing confirmation code and payload without re-executing.
+5. **State-Version Protection**:
+   - Proposals store `state_version`. If dynamic replanning increments the version (`v1 -> v2`), `approval_service.invalidate_proposals_for_trip` marks pending proposals and approval requests as `CANCELLED`.
+6. **Server-Side Expiry Enforcement**:
+   - Proposals and requests define `expires_at`. Expired approvals cannot be approved or executed.
+7. **Safe Mock Transactional Providers (`mcp/transactional_providers.py`)**:
+   - `MockFlightBookingProvider`, `MockHotelBookingProvider`, `MockActivityBookingProvider` generate synthetic confirmation codes (`DEMO-FLT-XXXX`, `DEMO-HTL-XXXX`, `DEMO-ACT-XXXX`) and explicitly declare `is_mock: True`.
+8. **Row Level Security (RLS) & Audit Logging**:
+   - Supabase migration `20260928000005_hitl_approvals.sql` provisions tables with `auth.uid() = user_id` tenant isolation.
+   - All events (`PROPOSAL_CREATED`, `APPROVAL_REQUESTED`, `APPROVED`, `REJECTED`, `EXPIRED`, `EXECUTION_STARTED`, `EXECUTION_COMPLETED`, `EXECUTION_FAILED`, `EXECUTION_CANCELLED`) are logged without secrets or credentials.
 
 
 

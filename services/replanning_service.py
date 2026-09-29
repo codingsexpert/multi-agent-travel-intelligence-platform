@@ -166,6 +166,19 @@ class ReplanningService:
         # Update processed event tracking in state
         updated_state["processed_event_ids"] = list(processed_ids.union(impact.event_ids))
 
+        # 5b. State-version Protection: Invalidate stale action proposals for this trip
+        previous_version = current_state.get("itinerary_version", 1)
+        if new_version.version > previous_version:
+            try:
+                from services.approval_service import approval_service
+                approval_service.invalidate_proposals_for_trip(
+                    trip_id=effective_trip_id,
+                    new_state_version=new_version.version,
+                    reason=f"Dynamic replan to v{new_version.version}: {new_version.change_reason}",
+                )
+            except Exception as e:
+                logger.error(f"[ReplanningService] Failed to invalidate stale proposals: {str(e)}")
+
         # 6. Record Immutable Audit Trail
         audit_record = ReplanningAuditRecord(
             trip_id=effective_trip_id,
