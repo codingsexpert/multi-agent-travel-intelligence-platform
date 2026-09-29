@@ -84,6 +84,17 @@ class TravelState(TypedDict, total=False):
     graph_step_count: int
     is_demo: bool
 
+    # --- Dynamic Replanning & Version Tracking (Phase 12) ---
+    itinerary_version: int
+    itinerary_history: List[Dict[str, Any]]
+    last_valid_itinerary: Optional[Dict[str, Any]]
+    pending_change_events: List[Dict[str, Any]]
+    processed_event_ids: List[str]
+    latest_impact_analysis: Optional[Dict[str, Any]]
+    agent_execution_modes: Dict[str, str]
+    replan_count: int
+    replan_reasons: List[str]
+
 
 def create_initial_state(
     original_request: str,
@@ -147,5 +158,14 @@ def create_initial_state(
         retry_count=0,
         graph_step_count=0,
         is_demo=is_demo,
+        itinerary_version=1,
+        itinerary_history=[],
+        last_valid_itinerary=None,
+        pending_change_events=[],
+        processed_event_ids=[],
+        latest_impact_analysis=None,
+        agent_execution_modes={},
+        replan_count=0,
+        replan_reasons=[],
     )
 

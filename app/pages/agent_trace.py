@@ -352,26 +352,80 @@ Agent
         st.table(rag_rows)
 
     st.markdown("---")
-    st.markdown("### 🔐 Security & Audit Events (Phase 11)")
-    from guardrails.security import SecurityAuditor
-    sec_events = SecurityAuditor.get_events(limit=15)
-    if not sec_events:
-        st.info("ℹ️ **Zero Security Violations Detected**: Workflow operating strictly within authorized security boundaries.")
-    else:
-        sec_rows = []
-        for se in sec_events:
-            sec_rows.append({
-                "Timestamp": se.get("timestamp", "")[:19],
-                "Type": se.get("event_type"),
-                "Severity": se.get("severity"),
-                "Agent": se.get("agent_role") or "N/A",
-                "Tool": se.get("tool_name") or "N/A",
-                "Message": se.get("message"),
-            })
-        st.table(sec_rows)
+    st.markdown("### 🔄 Dynamic Replanning & Selective Node Execution (Phase 12)")
+    st.markdown(
+        "Demonstrates intelligent selective execution: only nodes impacted by change events are re-executed (`RERUN`), "
+        "while unaffected deliverables are safely preserved (`REUSED`)."
+    )
+
+    itinerary_ver = travel_state.get("itinerary_version", 1)
+    replan_count = travel_state.get("replan_count", 0)
+    exec_modes = travel_state.get("agent_execution_modes", {})
+    latest_impact = travel_state.get("latest_impact_analysis", {})
+
+    col_r1, col_r2, col_r3 = st.columns(3)
+    with col_r1:
+        st.metric(label="Itinerary Version", value=f"v{itinerary_ver}")
+    with col_r2:
+        st.metric(label="Replans Executed", value=str(replan_count))
+    with col_r3:
+        st.metric(label="Replan Severity", value=latest_impact.get("severity", "NONE") if latest_impact else "NONE")
+
+    # Selective Execution Badges Table
+    st.markdown("#### Selective Node Execution Map")
+    node_roster = [
+        ("flight", "Flight Agent"),
+        ("hotel", "Hotel Agent"),
+        ("activity", "Activity Agent"),
+        ("weather", "Weather Agent"),
+        ("research", "Research Agent"),
+        ("budget_engine", "Budget Engine"),
+        ("validator", "Validator Engine"),
+    ]
+
+    badge_cols = st.columns(len(node_roster))
+    for idx, (node_key, node_label) in enumerate(node_roster):
+        action = exec_modes.get(node_key, "REUSED" if replan_count > 0 else "RERUN")
+        with badge_cols[idx]:
+            if action == "RERUN":
+                b_color = "#FF9800"
+                b_text = "RERUN ⚡"
+                b_bg = "rgba(255, 152, 0, 0.15)"
+            elif action == "REUSE" or action == "REUSED":
+                b_color = "#4CAF50"
+                b_text = "REUSED ✓"
+                b_bg = "rgba(76, 175, 80, 0.15)"
+            elif action == "INVALIDATE" or action == "INVALIDATED":
+                b_color = "#F44336"
+                b_text = "INVALIDATED ✗"
+                b_bg = "rgba(244, 67, 54, 0.15)"
+            else:
+                b_color = "#9E9E9E"
+                b_text = "SKIPPED ⏸️"
+                b_bg = "rgba(158, 158, 158, 0.15)"
+
+            st.markdown(
+                f"""
+                <div style="
+                    border: 1px solid {b_color};
+                    background: {b_bg};
+                    border-radius: 6px;
+                    padding: 8px 4px;
+                    text-align: center;
+                    margin-bottom: 8px;
+                ">
+                    <div style="font-size: 0.75rem; color: #ECEFF1; font-weight: 500;">{node_label}</div>
+                    <div style="font-size: 0.85rem; color: {b_color}; font-weight: 700; margin-top: 4px;">{b_text}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    if latest_impact and latest_impact.get("human_explanation"):
+        st.info(f"💡 **Replan Reason**: {latest_impact.get('human_explanation')}")
 
     st.markdown("---")
-    st.markdown("### System Architecture Roster (Phase 11)")
+    st.markdown("### System Architecture Roster (Phase 12)")
 
 
     for idx, agent in enumerate(PLANNED_AGENTS, 1):

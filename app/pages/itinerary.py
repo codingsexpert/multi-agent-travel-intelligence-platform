@@ -62,6 +62,148 @@ def render_itinerary_page() -> None:
 
     st.markdown("---")
 
+    # ==============================================================================
+    # Phase 12: Dynamic Replanning / Changes Section
+    # ==============================================================================
+    travel_state = st.session_state.get("travel_state", {})
+    itinerary_ver = travel_state.get("itinerary_version", 1)
+    replan_count = travel_state.get("replan_count", 0)
+    itinerary_history = travel_state.get("itinerary_history", [])
+    latest_impact = travel_state.get("latest_impact_analysis", {})
+    exec_modes = travel_state.get("agent_execution_modes", {})
+
+    st.subheader("🔄 Dynamic Replanning & Itinerary Evolution (Phase 12)")
+    
+    col_ver1, col_ver2, col_ver3 = st.columns([1, 2, 2])
+    with col_ver1:
+        st.metric(label="Current Itinerary", value=f"v{itinerary_ver}")
+    with col_ver2:
+        st.metric(label="Replans Applied", value=str(replan_count))
+    with col_ver3:
+        last_reason = travel_state.get("replan_reasons", ["Initial Creation"])[-1] if replan_count > 0 else "Initial Itinerary"
+        st.metric(label="Latest Trigger", value=last_reason[:30])
+
+    if replan_count > 0 and latest_impact:
+        st.info(f"⚡ **Latest Change Event**: `{last_reason}`")
+        
+        # Why did the itinerary change? (Structured Explanation)
+        with st.container():
+            st.markdown("#### 💡 Why did the itinerary change?")
+            human_expl = latest_impact.get("human_explanation") or travel_state.get("itinerary_history", [{}])[-1].get("human_explanation")
+            if human_expl:
+                st.markdown(
+                    f"""
+                    <div style="background-color: rgba(66, 165, 245, 0.08); border-left: 4px solid #42A5F5; padding: 12px 16px; border-radius: 4px; margin-bottom: 16px;">
+                        <span style="font-size: 1.05rem; font-weight: 500; color: #E3F2FD;">{human_expl}</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        # Impacted vs Unchanged Columns
+        c_impact, c_reuse = st.columns(2)
+        with c_impact:
+            st.markdown("##### ⚠️ Affected & Selectively Replanned")
+            rerun_list = latest_impact.get("rerun_nodes", [])
+            if "flight" in rerun_list:
+                st.markdown("✓ **Flight Agent**: Rescheduled flight option selected")
+            if "hotel" in rerun_list:
+                st.markdown("✓ **Hotel Agent**: Alternative lodging assigned")
+            if "activity" in rerun_list:
+                aff_days = latest_impact.get("affected_days", [])
+                days_txt = f"Day {', '.join(str(d) for d in aff_days)}" if aff_days else "schedule"
+                st.markdown(f"✓ **Activity Agent**: Replaced outdoor/disrupted activities on {days_txt}")
+            if "budget_engine" in rerun_list:
+                st.markdown("✓ **Budget Engine**: Recalculated total trip expenses deterministically")
+            if "validator" in rerun_list:
+                st.markdown("✓ **Validator Engine**: Re-verified temporal feasibility & constraints")
+
+        with c_reuse:
+            st.markdown("##### 🛡️ Unchanged & Safely Reused")
+            reuse_list = latest_impact.get("reusable_nodes", [])
+            if "flight" in reuse_list:
+                st.markdown("✓ **Flight Schedule**: Carrier reservations intact")
+            if "hotel" in reuse_list:
+                st.markdown("✓ **Hotel Booking**: Lodging selection preserved")
+            if "activity" in reuse_list:
+                st.markdown("✓ **Activities**: Other days' schedules unchanged")
+            if "weather" in reuse_list:
+                st.markdown("✓ **Weather Intelligence**: Climatology data reused")
+            if "research" in reuse_list:
+                st.markdown("✓ **Research Agent**: Destination guidance reused")
+
+        # Interactive Replan Timeline
+        with st.expander("⏱️ Replan Evolution Timeline", expanded=False):
+            st.markdown(f"**Itinerary v1** (Initial Plan)")
+            for i, hist in enumerate(itinerary_history, start=2):
+                st.markdown(f"  ↓ *{hist.get('change_reason', 'Disruption')}*")
+                st.markdown(f"  ↓ *Impact Analysis: Rerunning {list(hist.get('node_execution_actions', {}).keys())}*")
+                st.markdown(f"**Itinerary v{i}** ({hist.get('created_at', '')[:19]}) — Status: `{ 'PASSED' if hist.get('is_valid') else 'WARNINGS' }`")
+
+    # Interactive Simulation Form
+    with st.expander("🛠️ Trigger Dynamic Replan / Disruption Event", expanded=False):
+        st.markdown("Simulate a real-time event or submit a natural language change request:")
+        sim_col1, sim_col2 = st.columns([1, 1])
+        with sim_col1:
+            scenario = st.selectbox(
+                "Preset Disruption Scenario",
+                [
+                    "Flight Cancelled (Carrier disruption)",
+                    "Flight Delayed by 4 Hours",
+                    "Weather Alert: Heavy Rain on Day 3",
+                    "Hotel Unavailable (Sold out)",
+                    "Budget Reduced by $300",
+                ],
+            )
+            if st.button("Trigger Preset Disruption", key="btn_preset_replan"):
+                from services.replanning_service import replanning_service
+                from models.replanning import ChangeEvent, ChangeEventType, ChangeEventSeverity
+                
+                ev_type = ChangeEventType.FLIGHT_CANCELLED
+                meta = {}
+                if "Delayed" in scenario:
+                    ev_type = ChangeEventType.FLIGHT_DELAYED
+                    meta = {"delay_hours": 4}
+                elif "Weather" in scenario:
+                    ev_type = ChangeEventType.WEATHER_ALERT
+                    meta = {"affected_days": [3], "condition": "heavy rain"}
+                elif "Hotel" in scenario:
+                    ev_type = ChangeEventType.HOTEL_UNAVAILABLE
+                elif "Budget" in scenario:
+                    ev_type = ChangeEventType.BUDGET_CHANGED
+                
+                ce = ChangeEvent(
+                    event_type=ev_type,
+                    source="SIMULATION",
+                    metadata=meta,
+                    description=scenario,
+                )
+                updated_state, new_ver, impact = replanning_service.trigger_dynamic_replan(
+                    change_event=ce,
+                    current_state=travel_state,
+                    user_id=travel_state.get("user_id", "demo-user"),
+                    trip_id=active_trip.get("id"),
+                )
+                st.session_state["travel_state"] = updated_state
+                st.success(f"Dynamic replan executed! Itinerary upgraded to v{new_ver.version}.")
+                st.rerun()
+
+        with sim_col2:
+            custom_prompt = st.text_input("Or Natural Language Change Request", placeholder="e.g. Reduce budget to $1500, or Move Tokyo to Osaka")
+            if st.button("Submit Change Request", key="btn_custom_replan") and custom_prompt:
+                from services.replanning_service import replanning_service
+                updated_state, new_ver, impact = replanning_service.handle_user_replan_request(
+                    prompt=custom_prompt,
+                    current_state=travel_state,
+                    user_id=travel_state.get("user_id", "demo-user"),
+                    trip_id=active_trip.get("id"),
+                )
+                st.session_state["travel_state"] = updated_state
+                st.success(f"Change processed! Generated Itinerary v{new_ver.version}.")
+                st.rerun()
+
+    st.markdown("---")
+
     # Validation Status Section (Phase 6)
     travel_state = st.session_state.get("travel_state", {})
     val_data = travel_state.get("validation_results")

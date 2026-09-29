@@ -447,5 +447,50 @@ In Phase 11, the multi-agent travel intelligence platform requires an enterprise
 10. **Consistent DEMO vs LIVE Guardrails**:
     - Security guardrails remain 100% active in both `DEMO_MODE=true` and `DEMO_MODE=false`. Mocking data never bypasses safety boundaries.
 
+---
+
+## ADR-19: Dynamic Replanning Engine, Deterministic Dependency Mapping, and Selective Execution
+
+### Context
+In real-world travel, disruptions are inevitable: flights are delayed or cancelled, sudden weather events close outdoor attractions, hotel rates surge or rooms sell out, and users frequently modify budgets or dates mid-stream. 
+A naive approach would prompt an LLM to "re-plan the entire trip from scratch." This is brittle, non-deterministic, cost-inefficient, and destructive: confirmed flights and hotels might be needlessly altered, budgets recomputed with arithmetic errors, and previously verified elements corrupted. 
+In Phase 12, the platform requires an intelligent, deterministic Dynamic Replanning Engine that:
+1. Detects exactly what changed (`ChangeEvent`).
+2. Deterministically identifies affected components and trip days via a dependency graph (`ImpactAnalysis`).
+3. Re-executes ONLY affected nodes (`RERUN`), safely reusing unaffected deliverables (`REUSED`).
+4. Re-computes financial budgets deterministically and verifies constraints with `ValidatorEngine`.
+5. Preserves immutable history through state versioning (`v1 -> v2`).
+6. Preserves `last_valid_itinerary` if replanning fails.
+7. Prevents infinite replanning recursion cycles.
+
+### Decision
+1. **Core Philosophy: REPLAN ONLY WHAT IS AFFECTED**:
+   - Rejection of monolithic LLM trip regeneration.
+   - Deterministic dependency resolution ensures predictable, surgical updates.
+2. **Typed Change Event Model (`models/replanning.py`)**:
+   - Categorical enums (`ChangeEventType`) covering 15 disruption variants (`FLIGHT_CANCELLED`, `WEATHER_ALERT`, `HOTEL_UNAVAILABLE`, `BUDGET_CHANGED`, etc.).
+   - Standardized payload with severity tiers, target entities, old/new values, and timestamps.
+3. **Explicit Deterministic Dependency Graph (`ReplanningEngine.DEPENDENCY_GRAPH`)**:
+   - Upstream nodes map directly to downstream consequences:
+     - `flight` -> `day_1_schedule`, `day_1_activities`, `hotel_checkin`, `budget_engine`
+     - `hotel` -> `lodging_location`, `transit_routes`, `evening_activities`, `budget_engine`
+     - `weather` -> `outdoor_activities`, `daily_schedule`
+     - `activity` -> `daily_schedule`, `transit_routes`, `budget_engine`
+     - `budget_engine` -> `validator`
+4. **Selective Re-Execution Pipeline**:
+   - Workflow nodes are partitioned into `rerun_nodes`, `reusable_nodes`, and `invalidated_nodes`.
+   - In LangGraph (`replanning_graph`), only rerun nodes execute; reusable deliverables are preserved intact.
+   - Every node records its execution mode (`RERUN`, `REUSE`, `INVALIDATE`, `SKIP`) for transparent telemetry in the Streamlit Agent Trace.
+5. **State & Itinerary Versioning (`ItineraryVersion`)**:
+   - Trip states transition `v1 -> v2 -> v3` with an append-only `itinerary_history`.
+   - Each version records its trigger event, execution actions, validation status, and human-readable explanation.
+6. **Graceful Failure Handling & Previous Itinerary Preservation**:
+   - If an external carrier API fails or an agent encounters an error during a replan, `last_valid_itinerary` is restored and the trip remains valid with clear user advisories.
+7. **Replanning Loop Protection**:
+   - Configurable safeguards (`MAX_REPLAN_DEPTH = 5`, `MAX_REPLAN_EVENTS = 10`, `MAX_REPLAN_NODE_EXECUTIONS = 20`) halt runaway cascading disruptions.
+8. **Auditing & Row Level Security**:
+   - Persistent `replanning_events` table in PostgreSQL with strict RLS policies ensuring users can only read and write replan logs for trips they own.
+
+
 
 

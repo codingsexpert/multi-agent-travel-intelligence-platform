@@ -6,6 +6,7 @@ from repositories.trip_repository import TripRepository, trip_repository
 from repositories.conversation_repository import ConversationRepository, conversation_repository
 from repositories.message_repository import MessageRepository, message_repository
 from repositories.agent_run_repository import AgentRunRepository, agent_run_repository
+from repositories.replanning_repository import ReplanningRepository, replanning_repository
 
 __all__ = [
     "BaseRepository",
@@ -19,4 +20,6 @@ __all__ = [
     "message_repository",
     "AgentRunRepository",
     "agent_run_repository",
+    "ReplanningRepository",
+    "replanning_repository",
 ]

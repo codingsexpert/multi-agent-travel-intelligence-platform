@@ -15,6 +15,7 @@ class MockDataStore:
         self.conversations: Dict[str, Dict[str, Any]] = {}
         self.messages: List[Dict[str, Any]] = []
         self.agent_runs: Dict[str, Dict[str, Any]] = {}
+        self.replanning_events: Dict[str, Dict[str, Any]] = {}
 
     def clear(self) -> None:
         """Reset all in-memory collections."""
@@ -24,6 +25,7 @@ class MockDataStore:
         self.conversations.clear()
         self.messages.clear()
         self.agent_runs.clear()
+        self.replanning_events.clear()
 
 
 # Global singleton in-memory storage for DEMO_MODE

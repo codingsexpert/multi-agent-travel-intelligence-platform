@@ -127,6 +127,21 @@ class Settings(BaseSettings):
         description="Sliding window duration in seconds for rate limiter",
     )
 
+    # Dynamic Replanning Settings (Phase 12)
+    max_replan_depth: int = Field(
+
+        default=5,
+        description="Maximum recursive replanning iterations allowed before terminating",
+    )
+    max_replan_events: int = Field(
+        default=10,
+        description="Maximum concurrent change events processed in a single replan execution",
+    )
+    max_replan_node_executions: int = Field(
+        default=20,
+        description="Maximum selective node re-executions per replan cycle",
+    )
+
     @property
     def is_production(self) -> bool:
         """Check if running in production."""

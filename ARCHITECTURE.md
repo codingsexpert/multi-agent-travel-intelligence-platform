@@ -841,35 +841,98 @@ User inputs, retrieved RAG documents, scraped web pages, external API payloads, 
 
 ---
 
-## 11. Dynamic Replanning Architecture
+## 11. Dynamic Replanning Architecture (Phase 12)
 
-Dynamic replanning is an essential differentiator for this platform:
+The Dynamic Replanning Engine provides intelligent, deterministic reactivity to disruptions, carrier delays, weather emergencies, and traveler revisions without blindly re-executing the entire multi-agent graph.
+
+### Architectural Decision & Flow Diagram
+
+```text
+                 CHANGE EVENT
+                      ↓
+               IMPACT ANALYSIS
+                      ↓
+             DEPENDENCY GRAPH
+                      ↓
+              AFFECTED NODES
+                 ↙    ↓    ↘
+              RERUN  REUSE  INVALIDATE
+                 ↘    ↓    ↙
+                MERGE STATE
+                     ↓
+                BUDGET ENGINE
+                     ↓
+                  VALIDATOR
+                     ↓
+               ITINERARY vN
+```
+
+### Dynamic Replanning Sequence Flow
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User as Traveler / Monitor
     participant Graph as LangGraph Orchestrator
-    participant Replan as Replanner Node
-    participant Agents as Specialized Agents
+    participant Replan as ReplanningEngine / Service
+    participant DepGraph as Deterministic Dependency Graph
+    participant Agents as Selectively Dispatched Agents
     participant Budget as Budget Engine
+    participant Validator as Validator Engine
     participant UI as Streamlit UI
 
-    User->>Graph: Trigger Disruption (e.g. Flight Cancelled / Heavy Rain)
-    Graph->>Replan: Assess Disruption Impact on Current State
-    Replan->>Replan: Isolate Broken Nodes (e.g. Day 2 Outdoor Activities)
-    Replan->>Agents: Re-dispatch Activity Agent with Indoor Constraint
-    Agents-->>Replan: New Indoor Activity Options Returned
-    Replan->>Budget: Re-calculate Total Budget & Verify No Overrun
-    Budget-->>Graph: Budget Validated
-    Graph->>UI: Present Itinerary Impact Diff (Before vs After)
-    UI->>User: Request Human Approval for New Schedule
+    User->>Graph: Trigger Disruption (Flight Cancelled / Weather Storm / Budget Cut)
+    Graph->>Replan: Parse & Validate ChangeEvent (Input Guardrails)
+    Replan->>DepGraph: Resolve Direct & Downstream Dependencies
+    DepGraph-->>Replan: Minimal Affected Node Set (e.g. flight, activity) & Reusable Nodes
+    Replan->>Agents: Selectively Rerun ONLY Affected Nodes (Mark others REUSED)
+    Agents-->>Replan: Updated Options Returned
+    Replan->>Budget: Recompute Total Expenses Deterministically
+    Budget-->>Validator: Verify Temporal Feasibility & Budget Constraints
+    Validator-->>Graph: Validated New Plan (Itinerary vN)
+    Graph->>UI: Update UI with Version vN, Impact Diff, and Human Explanation
 ```
 
-### Key Principles:
-- **Surgical Delta Replanning**: Avoids regenerating unaffected days or confirmed flight bookings. Only invalidated segments are replanned.
-- **Budget Preservation**: Any alternative activity or hotel must not exceed the remaining allocated category budget.
-- **Versioned History**: Past itinerary versions are archived in `replanning_history` with the exact disruption cause and agent rationale.
+### Core Architecture Pillars:
+
+1. **Selective Re-execution Over Full Graph Restart**:
+   - The platform never prompts an LLM to "re-plan everything from scratch".
+   - The minimal set of affected nodes is computed deterministically via the `DEPENDENCY_GRAPH`.
+   - Deliverables that do not depend on the disrupted entity (e.g. hotel booking during a weather storm) are kept untouched and tagged `REUSED`.
+
+2. **Structured Change Events (`ChangeEvent`)**:
+   - Categorical, strongly typed event models supporting 15 event types: `FLIGHT_CANCELLED`, `FLIGHT_DELAYED`, `HOTEL_UNAVAILABLE`, `HOTEL_PRICE_CHANGED`, `WEATHER_CHANGED`, `WEATHER_ALERT`, `ACTIVITY_UNAVAILABLE`, `BUDGET_CHANGED`, `TRIP_DATES_CHANGED`, `TRAVELLER_COUNT_CHANGED`, `PREFERENCE_CHANGED`, `DESTINATION_CHANGED`, `EXTERNAL_ADVISORY`, `USER_REQUESTED_REPLAN`.
+   - Accompanied by ISO-8601 timestamps, source classification, entity targets, and severity tiers (`INFO` to `CRITICAL`).
+
+3. **Deterministic Dependency Graph**:
+   - Explicit graph mapping upstream nodes to dependent downstream processes:
+     - `flight` -> `day_1_schedule`, `day_1_activities`, `hotel_checkin`, `budget_engine`
+     - `hotel` -> `lodging_location`, `transit_routes`, `evening_activities`, `budget_engine`
+     - `weather` -> `outdoor_activities`, `daily_schedule`
+     - `activity` -> `daily_schedule`, `transit_routes`, `budget_engine`
+     - `research` -> `advisories`, `customs_warnings`
+     - `budget` -> `validator`
+
+4. **Result Reuse vs. Invalidation**:
+   - Unaffected agent results are preserved intact (`REUSED`).
+   - Results affected by dependency shifts are discarded (`INVALIDATED`) and regenerated (`RERUN`).
+
+5. **State & Itinerary Versioning (`ItineraryVersion`)**:
+   - State maintains `itinerary_version: int`, `itinerary_history: List[Dict[str, Any]]`, and `last_valid_itinerary`.
+   - Each replan transitions `Itinerary v1 -> v2 -> v3` without destructive overwrites.
+
+6. **Deterministic Financial Math & Constraint Verification**:
+   - Recalculates exact category totals, tax estimates, and budget headroom using `BudgetEngine`.
+   - Runs `ValidatorEngine` on all dates, connection times, and opening hours. No LLM arithmetic is permitted.
+
+7. **Graceful Failure Recovery & Previous Itinerary Preservation**:
+   - If a provider or agent fails during a replan, the system restores `last_valid_itinerary` and reports a clear warning rather than corrupting the trip plan.
+
+8. **Replanning Loop Protection**:
+   - Bounded retries and recursion depth limits (`MAX_REPLAN_DEPTH = 5`, `MAX_REPLAN_EVENTS = 10`, `MAX_REPLAN_NODE_EXECUTIONS = 20`) prevent infinite replanning cascades.
+
+9. **Immutable Audit Trail (`replanning_events`)**:
+   - Every replan event is logged in PostgreSQL with Supabase Row Level Security (RLS) guaranteeing tenant isolation.
 
 ---
 

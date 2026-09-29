@@ -141,6 +141,13 @@ __all__ = [
     "ResearchFinding",
     "ConflictingClaim",
     "FreshWebResearchResult",
+    "ChangeEventType",
+    "ChangeEventSeverity",
+    "NodeExecutionAction",
+    "ChangeEvent",
+    "ImpactAnalysis",
+    "ItineraryVersion",
+    "ReplanningAuditRecord",
 ]
 
 from models.rag import (
@@ -162,3 +169,14 @@ from models.research import (
     ConflictingClaim,
     FreshWebResearchResult,
 )
+
+from models.replanning import (
+    ChangeEventType,
+    ChangeEventSeverity,
+    NodeExecutionAction,
+    ChangeEvent,
+    ImpactAnalysis,
+    ItineraryVersion,
+    ReplanningAuditRecord,
+)
+

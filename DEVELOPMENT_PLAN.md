@@ -478,24 +478,43 @@ This development plan breaks down the construction of the platform into **18 dis
 ---
 
 
-## Phase 12: Dynamic Replanning Engine
-- **Objective**: Enable surgical delta-replanning in response to disruptions without regenerating the entire trip.
+## Phase 12: Dynamic Replanning Engine (COMPLETED)
+- **Objective**: Build a deterministic Dynamic Replanning Engine that allows the multi-agent travel system to react to changing conditions (flight cancellations, weather alerts, hotel sold out, budget cuts, user revisions) without restarting the entire workflow.
 - **Implementation Tasks**:
-  1. Define disruption event schema `src/schemas/disruption.py` (e.g. Flight Cancelled, Storm Alert, Hotel Unavailable, Budget Cut).
-  2. Implement Replanner Agent `src/agents/replanner.py`:
-     - Assesses disruption impact.
-     - Identifies invalidated itinerary items while locking confirmed ones.
-     - Generates targeted delta instructions for affected sub-agents.
-  3. Add cyclic replanning edge in LangGraph with `replan_count` circuit breaker.
-  4. Build Streamlit Disruption Simulator UI allowing users to trigger test events.
+  1. Built strongly typed Pydantic models in `models/replanning.py`:
+     - `ChangeEventType`: 15 categorical disruption types (`FLIGHT_CANCELLED`, `FLIGHT_DELAYED`, `WEATHER_ALERT`, `HOTEL_UNAVAILABLE`, `BUDGET_CHANGED`, etc.).
+     - `ChangeEventSeverity`: `INFO`, `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`.
+     - `NodeExecutionAction`: `RERUN`, `REUSE`, `INVALIDATE`, `SKIP`.
+     - `ChangeEvent`, `ImpactAnalysis`, `ItineraryVersion`, `ReplanningAuditRecord`.
+  2. Built deterministic `ReplanningEngine` in `engines/replanning_engine.py`:
+     - Explicit deterministic `DEPENDENCY_GRAPH` mapping nodes to dependent processes.
+     - `EVENT_NODE_MAPPING` linking events to primary affected nodes, downstream reruns, affected days, and severity tiers.
+     - `analyze_impact()`: Deduplicates events, detects recursion loops, computes minimal affected node set (`rerun_nodes`), reusable nodes (`reusable_nodes`), and synthesizes structured human-readable explanations strictly from event facts.
+     - `execute_selective_replan()`: Selectively re-executes only affected nodes, preserves `last_valid_itinerary` on failure, deterministically re-runs Budget Engine and Validator Engine, increments itinerary version (`v1 -> v2`), and archives full version history.
+     - `parse_user_replan_request()`: Deterministically converts natural language revision prompts into structured `ChangeEvent` instances.
+  3. Integrated LangGraph StateGraph Replanning Workflow in `graph/workflow.py`:
+     - Created `create_replanning_graph()`: `START -> detect_change -> impact_analysis -> selective_execution -> budget_engine -> validator -> itinerary_version -> output_guardrail -> END`.
+     - Added replanning tracking state fields to `graph/state.py` (`itinerary_version`, `itinerary_history`, `last_valid_itinerary`, `agent_execution_modes`, `replan_count`, `replan_reasons`, `pending_change_events`, `processed_event_ids`).
+  4. Built `ReplanningRepository` in `repositories/replanning_repository.py` and database migration `supabase/migrations/20260928000004_replanning_events.sql` with Row Level Security (RLS) guaranteeing tenant isolation.
+  5. Built `ReplanningService` in `services/replanning_service.py` wrapping input guardrails, tenant authorization, impact analysis, selective execution, and immutable audit logging.
+  6. Updated Streamlit UI:
+     - `Itinerary` page (`app/pages/itinerary.py`): Dynamic Replanning & Changes section showing current version badge (`v2`), latest trigger, structured "Why did the itinerary change?", affected vs. reusable component breakdown, evolution timeline, and live disruption/user replan simulation form.
+     - `Agent Trace` page (`app/pages/agent_trace.py`): Dynamic Replanning Telemetry section displaying selective execution badges (`RERUN ⚡`, `REUSED ✓`, `INVALIDATED ✗`, `SKIPPED ⏸️`) for all 7 domain nodes.
+  7. Built comprehensive test suite in `tests/test_replanning.py` covering all 32 required scenarios.
 - **Files / Components**:
-  - `src/schemas/disruption.py`, `src/agents/replanner.py`
-  - `src/ui/components/disruption_simulator.py`
+  - `models/replanning.py`, `models/__init__.py`
+  - `engines/replanning_engine.py`, `engines/__init__.py`
+  - `repositories/replanning_repository.py`, `repositories/mock_store.py`, `repositories/__init__.py`
+  - `supabase/migrations/20260928000004_replanning_events.sql`
+  - `graph/state.py`, `graph/workflow.py`
+  - `services/replanning_service.py`, `services/__init__.py`
+  - `app/pages/itinerary.py`, `app/pages/agent_trace.py`
   - `tests/test_replanning.py`
 - **Testing Requirements**:
-  - Trigger simulated flight delay; verify hotel and downstream activities adjust while unaffected days remain intact.
+  - 32 dedicated unit/integration tests passing (`pytest tests/test_replanning.py -v`).
+  - Total test suite: 263/263 tests passing across all 12 phases with 0 failures.
 - **Expected Output**:
-  - Dynamic delta-replanning with visual before-and-after itinerary diffs.
+  - Intelligent, surgical replanning that updates only affected schedule blocks, preserves confirmed plans, recalculates exact budgets, and guarantees safety.
 
 ---
 

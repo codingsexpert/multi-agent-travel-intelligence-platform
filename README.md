@@ -523,6 +523,74 @@ Phase 9 introduces an enterprise-grade **Retrieval-Augmented Generation (RAG)** 
 
 ---
 
+## 🔄 Dynamic Replanning Engine (Phase 12)
+
+The Dynamic Replanning Engine allows the travel platform to react to real-time disruptions (e.g. flight cancellations, severe weather alerts, hotel booking drops, and user budget updates) **without restarting the entire workflow**.
+
+### Core Architecture Flow
+
+```text
+                 CHANGE EVENT
+                      ↓
+               IMPACT ANALYSIS
+                      ↓
+             DEPENDENCY GRAPH
+                      ↓
+              AFFECTED NODES
+                 ↙    ↓    ↘
+              RERUN  REUSE  INVALIDATE
+                 ↘    ↓    ↙
+                MERGE STATE
+                     ↓
+                BUDGET ENGINE
+                     ↓
+                  VALIDATOR
+                     ↓
+               ITINERARY vN
+```
+
+### Key Capabilities & Principles
+
+1. **Selective Re-Execution Over Full Restart**:
+   - The platform resolves explicit dependencies rather than prompting an LLM to "recreate the entire trip".
+   - Only nodes directly impacted by the change event are re-executed (`RERUN`), while unaffected deliverables (`REUSED`) are preserved intact.
+   - Example (Flight Cancelled): Flight Agent reruns and Day 1 activities adjust; Hotel, Weather, and Destination Research remain untouched and are marked `REUSED`.
+   - Example (Weather Storm): Activity Agent swaps outdoor Day 3 excursions for indoor cultural landmarks; Flights and Hotels remain unchanged.
+
+2. **Structured Change Events (`ChangeEvent`)**:
+   - Strongly typed Pydantic models with 15 categorical disruption types: `FLIGHT_CANCELLED`, `FLIGHT_DELAYED`, `HOTEL_UNAVAILABLE`, `WEATHER_ALERT`, `BUDGET_CHANGED`, `TRIP_DATES_CHANGED`, `TRAVELLER_COUNT_CHANGED`, `PREFERENCE_CHANGED`, `DESTINATION_CHANGED`, etc.
+   - Categorized by severity (`INFO`, `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`) with metadata tracking.
+
+3. **Deterministic Dependency Graph**:
+   - Explicit mappings link upstream disruptions to affected components and days:
+     - `Flight -> Day 1 Arrival & Activities, Hotel Check-in, Budget Engine`
+     - `Hotel -> Lodging Location, Daily Transit Buffers, Budget Engine`
+     - `Weather -> Outdoor Activities, Daily Schedule`
+     - `Budget -> Budget Engine, Validator Engine`
+
+4. **Result Reuse & Invalidation Rules**:
+   - Every deliverable is fingerprint-tracked.
+   - Deliverables depending on changed parameters are explicitly invalidated; unaffected components are safely reused.
+
+5. **State & Itinerary Versioning (`ItineraryVersion`)**:
+   - Every replan creates an immutable new version (`v1 -> v2 -> v3...`).
+   - Maintains full history of previous plans, trigger events, and structured reasons.
+
+6. **Structured Human Explanations**:
+   - Synthesizes clear, factual explanations strictly from event data (e.g., *"Your Tokyo flight was cancelled by the carrier. The system automatically rescheduled flight options, adjusted Day 1 activities, and recalculated total expenses. Your hotel reservations and weather forecast remain unchanged."*).
+   - Zero hallucinated reasons.
+
+7. **Graceful Failure Recovery & Last Valid Itinerary Preservation**:
+   - If an external provider fails or an agent encounters an error during a replan, the system restores `last_valid_itinerary` and reports a clear warning rather than corrupting or discarding the user's trip.
+
+8. **Replanning Loop Protection**:
+   - Enforces `MAX_REPLAN_DEPTH = 5`, `MAX_REPLAN_EVENTS = 10`, and event deduplication to eliminate infinite replanning cycles.
+
+9. **Immutable Audit Trail (`replanning_events`)**:
+   - All replan transactions are persisted to Supabase with Row Level Security (RLS) guaranteeing tenant isolation.
+
+---
+
 ## 🛡️ Security & Privacy Principles
 
 1. **Zero Secret Leaks**: Secrets and service keys are never committed to version control.
