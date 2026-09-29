@@ -1241,3 +1241,90 @@ Provides an interactive evaluation cockpit displaying:
 - Performance: P50, P95, P99 latency percentiles, average tokens, cost per workflow, and cache hit rates
 - Scenario Drilldown: Filter by scenario category, view expected vs actual outcomes, failure reasons, and trace IDs
 - Live "Re-run Evaluation Suite" button for immediate on-demand benchmarking
+
+---
+
+## 17. Production Deployment, Hardening & CI/CD Architecture
+
+```mermaid
+graph TD
+    subgraph SourceAndCI [GitHub & Continuous Integration]
+        GitRepo[GitHub Repository] --> Actions[GitHub Actions CI Workflow]
+        Actions --> StepSetup[Python 3.11 Setup]
+        Actions --> StepDeps[Install Dependencies]
+        Actions --> StepSecretScan[Secret Scanner Gate]
+        Actions --> StepConfigVal[Config Validation Gate]
+        Actions --> StepPytest[Pytest: Unit, Integration & Scenario]
+        Actions --> StepEvalSmoke[Evaluation Smoke Test Gate]
+        Actions --> StepHealthCheck[Subsystem Health Probe Check]
+    end
+
+    subgraph ContainerAndRuntime [Production Runtime Environment]
+        StepHealthCheck --> DockerBuild[Multi-Stage Docker Build]
+        DockerBuild --> NonRootApp[appuser: UID 10001 Container]
+        NonRootApp --> StreamlitServer[Streamlit Production Engine]
+        
+        StreamlitServer --> StreamlitConfig[.streamlit/config.toml - Headless, Port 8501, No Stack Traces]
+        StreamlitServer --> ConfigValidator[config.validator.py - Zero Secret Leakage]
+    end
+
+    subgraph HealthMonitoring [Dual-Probe Health Cockpit]
+        StreamlitServer --> HealthSvc[services.health_service.py]
+        HealthSvc --> LivenessProbe[Liveness Probe - /health/live]
+        HealthSvc --> ReadinessProbe[Readiness Probe - /health/ready]
+        
+        subgraph Subsystems [8 Architectural Subsystem Probes]
+            SubApp[1. Application]
+            SubDB[2. Supabase DB / RLS]
+            SubAuth[3. Supabase Auth]
+            SubLLM[4. LLM Providers]
+            SubMCP[5. MCP Tool Servers]
+            SubSearch[6. Web Search]
+            SubRAG[7. pgvector RAG]
+            SubTrace[8. LangSmith Observability]
+        end
+        HealthSvc --> Subsystems
+    end
+```
+
+### 17.1 Zero-Leak Configuration Validation (`config/validator.py`)
+Production configuration is verified at process launch:
+- Validates URL syntax (`SUPABASE_URL`, `SUPABASE_ENDPOINT`, `LANGSMITH_ENDPOINT`) using strict HTTPS/HTTP schemes.
+- Enforces production safety invariants: `DEMO_MODE=false` requires valid Supabase credentials and at least one LLM provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`).
+- Secret Redaction: Errors or missing keys are reported without printing key values or hashes to logs or stdout.
+
+### 17.2 Subsystem Health Probes & Operational States (`services/health_service.py`)
+Evaluates 8 architectural subsystems into three discrete states (`HEALTHY`, `DEGRADED`, `UNAVAILABLE`):
+1. **Application**: Streamlit runtime responsiveness, process uptime, and python environment.
+2. **Database**: Supabase PostgreSQL connectivity and Row-Level Security policy readiness.
+3. **Authentication**: Supabase Auth service reachability and JWT validation capability.
+4. **LLM Providers**: Primary and fallback LLM connectivity (OpenAI, Anthropic, Gemini).
+5. **MCP Tool Servers**: Flight, Hotel, Weather, and Currency MCP client gateways.
+6. **Web Search**: Live search connectivity (Tavily / DuckDuckGo).
+7. **RAG Knowledge Fabric**: Vector similarity search and document retrieval readiness.
+8. **Observability**: LangSmith distributed tracing endpoint and project reachability.
+
+- **Liveness vs. Readiness Probes**:
+  - `get_liveness_status()`: Confirms the application process is alive and responsive.
+  - `get_readiness_status()`: Confirms critical dependencies (application, database, auth) are operational. Non-critical dependencies (e.g. search or weather) can be degraded without causing pod restart loops.
+
+### 17.3 Streamlit Production Hardening (`.streamlit/config.toml`)
+- `server.headless = true`: Optimized for containerized and headless cloud execution.
+- `server.port = 8501`: Standard production listening port.
+- `server.enableCORS = false` & `server.enableXsrfProtection = true`: Security hardening against cross-site request forgery.
+- `browser.gatherUsageStats = false`: Enterprise telemetry privacy protection.
+- `client.showErrorDetails = false`: Suppresses raw Python exceptions and stack traces from traveler-facing UI.
+
+### 17.4 Hardened Containerization (`Dockerfile` & `.dockerignore`)
+- Built upon minimal `python:3.11-slim` base image.
+- Enforces **least privilege**: runs under an unprivileged `appuser` (UID 10001, GID 10001).
+- Native container healthcheck: `curl -f http://localhost:8501/_stcore/health || exit 1`.
+- Clean separation: `.dockerignore` blocks `.env`, git artifacts, test caches, and local secrets from being baked into images.
+
+### 17.5 Automated CI/CD Pipeline (`.github/workflows/ci.yml`)
+1. **Secret Scanning**: Scans all tracked repository files for accidentally committed credentials.
+2. **Config Schema Validation**: Executes `config.validator` tests across demo and production modes.
+3. **Automated Testing**: Executes the full 382+ test pytest suite across unit, integration, and scenario layers.
+4. **Evaluation Smoke Testing**: Validates the 31-scenario synthetic evaluation dataset runner.
+5. **Health Probe Integrity**: Validates liveness and readiness probe response contracts.
+

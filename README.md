@@ -782,6 +782,33 @@ Phase 17 elevates the user experience into an enterprise-grade **Travel Command 
 
 ---
 
+## 🚀 Phase 18: Production Deployment, CI/CD & Final Production Hardening
+
+Phase 18 completes the platform lifecycle, establishing defense-in-depth production hardening, startup validation, dual-probe health monitoring, multi-stage non-root containerization, automated CI/CD, and production readiness governance.
+
+### Production Highlights
+1. **Startup Configuration Validation (`config/validator.py`)**:
+   - Zero-credential-leak validation verifying environment variables, HTTPS/HTTP URLs, and mode constraints.
+   - Enforces required Supabase credentials and LLM keys when `DEMO_MODE=false`.
+2. **Subsystem Health Monitoring & Dual Probes (`services/health_service.py`)**:
+   - Evaluates 8 distinct architectural subsystems (`Application`, `Database`, `Authentication`, `LLM Providers`, `MCP Tool Servers`, `Web Search`, `RAG Knowledge`, `LangSmith Tracing`).
+   - Returns discrete statuses: `HEALTHY`, `DEGRADED`, `UNAVAILABLE`.
+   - Distinct **Liveness** (`/health/live`) and **Readiness** (`/health/ready`) probes prevent container restart loops when optional providers experience intermittent issues.
+3. **Streamlit Production Hardening (`.streamlit/config.toml`)**:
+   - Headless execution, port 8501, CORS disabled, XSRF protection enabled.
+   - Suppresses raw stack traces and exception details (`showErrorDetails = false`).
+4. **Hardened Multi-Stage Containerization (`Dockerfile` & `.dockerignore`)**:
+   - Minimal `python:3.11-slim` base image running under unprivileged user `appuser` (UID 10001).
+   - Built-in container healthcheck via Streamlit health probe.
+   - Strict `.dockerignore` preventing secrets, git metadata, and caches from entering image layers.
+5. **Automated CI/CD Workflow (`.github/workflows/ci.yml`)**:
+   - GitHub Actions pipeline executing secret scanning, config schema validation, full 382+ test pytest suite, evaluation smoke tests, and health probe verification.
+6. **Production Documentation**:
+   - [`DEPLOYMENT.md`](file:///Users/MukeshSingh/Desktop/travel-intelligence-platform/DEPLOYMENT.md): Step-by-step production runbook for Streamlit Community Cloud, AWS ECS, GCP Cloud Run, and Docker.
+   - [`PRODUCTION_READINESS.md`](file:///Users/MukeshSingh/Desktop/travel-intelligence-platform/PRODUCTION_READINESS.md): Exhaustive audit scorecard covering architecture, security, performance, cost, and limitations.
+
+---
+
 ## 🛡️ Security & Privacy Principles
 
 1. **Zero Secret Leaks**: Secrets and service keys are never committed to version control.

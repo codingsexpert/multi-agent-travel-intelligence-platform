@@ -20,6 +20,7 @@ This document records the foundational architectural decisions made for the **Mu
 13. [ADR-21: Production LangSmith Observability, Secret Redaction, & Failure Isolation](#adr-21-production-langsmith-observability-secret-redaction--failure-isolation)
 14. [ADR-22: Cost Optimization, Deterministic Model Routing & Intelligent Caching](#adr-22-cost-optimization-deterministic-model-routing--intelligent-caching)
 15. [ADR-23: Comprehensive Testing & Evaluation Framework](#adr-23-comprehensive-testing--evaluation-framework)
+16. [ADR-24: Production Hardening, CI/CD, Containerization & Health Probes](#adr-24-production-hardening-cicd-containerization--health-probes)
 
 ---
 
@@ -695,6 +696,68 @@ We implement a hybrid, multi-layered testing and evaluation framework that stric
 ### Alternatives Considered
 - *LLM-Only Evaluation (e.g. DeepEval / Ragas monolithic judge)*: Rejected because LLMs cannot be trusted to reliably verify exact budget math, RLS tenant isolation, or cryptographic approval token expiry.
 - *Only Pytest*: Rejected because standard unit assertions do not measure multi-agent quality dimensions, hallucination rates, or replanning selectivity across continuous distributions.
+
+---
+
+## ADR-24: Production Hardening, CI/CD, Containerization & Health Probes
+
+### Context
+Moving a multi-agent travel intelligence platform to production requires operational rigor beyond local development. The system interfaces with diverse external boundaries: Supabase PostgreSQL (with RLS), Supabase Auth, LLM providers, MCP tool servers, search providers, vector stores, and LangSmith. In production, configuration must be strictly validated at startup without leaking credentials; runtime failures must distinguish between process health (liveness) and dependency availability (readiness); Docker images must run securely without root privileges; CI/CD must enforce linting, typing, security scanning, and test gates; and user interfaces must never expose raw exceptions, stack traces, or mock data disguised as live intelligence.
+
+### Decision
+We implement a zero-leak, defense-in-depth production deployment strategy:
+
+1. **Deterministic Configuration Validation (`config/validator.py`)**:
+   - Validates all environment variables and URLs at startup.
+   - Enforces production safety invariants (e.g. `DEMO_MODE=false` requires valid `SUPABASE_URL` and `SUPABASE_ANON_KEY`, plus at least one LLM key).
+   - Sanitizes and redacts all secret values in configuration reporting (`validate_environment` returns structured errors without printing credentials).
+
+2. **Subsystem Health Probes (`services/health_service.py`)**:
+   - Implements structured probes across 8 architectural subsystems:
+     1. Application (Streamlit process, memory, uptime)
+     2. Database (Supabase PostgreSQL connectivity & RLS)
+     3. Authentication (Supabase Auth service)
+     4. LLM Providers (OpenAI/Anthropic/Gemini connectivity)
+     5. MCP Tool Servers (Flight, Hotel, Weather, Currency)
+     6. Web Search (Tavily/DuckDuckGo)
+     7. RAG Knowledge Fabric (pgvector embeddings & retrieval)
+     8. Observability (LangSmith tracing)
+   - Evaluates three discrete states per subsystem: `HEALTHY`, `DEGRADED`, `UNAVAILABLE`.
+   - Distinct Liveness (`/health/live`) and Readiness (`/health/ready`) probe contracts: optional provider degradation allows the application to remain functional in `DEGRADED` mode without terminating the pod.
+
+3. **Streamlit Production Hardening (`.streamlit/config.toml`)**:
+   - Headless execution mode (`headless = true`), server port 8501, CORS disabled, XSRF protection enabled.
+   - Suppresses raw stack traces and exception internals (`showErrorDetails = false`) to prevent information leakage to travelers.
+
+4. **Secure Multi-Stage Containerization (`Dockerfile` & `.dockerignore`)**:
+   - Minimal base image `python:3.11-slim`.
+   - Dedicated non-root user `appuser` (UID 10001, GID 10001) with strict filesystem permissions.
+   - Built-in container healthcheck via `curl -f http://localhost:8501/_stcore/health`.
+   - `.dockerignore` prevents `.env`, git artifacts, test caches, and development secrets from entering the image layer.
+
+5. **Automated CI/CD Pipeline (`.github/workflows/ci.yml`)**:
+   - Automated multi-stage GitHub Actions pipeline:
+     1. Environment setup & dependency caching.
+     2. Secret scrubbing scanner checking staged files for accidental key leaks.
+     3. Configuration schema validation in both demo and production modes.
+     4. Pytest test suite execution across unit, integration, and scenario tests.
+     5. Evaluation smoke testing verifying deterministic evaluators.
+     6. Health probe integrity verification.
+
+6. **Clear DEMO vs. LIVE Separation**:
+   - UI prominently displays provenance badges (`DEMO` vs `LIVE`).
+   - Mock data is never labeled as live or current.
+   - All transactional operations (booking, payment, cancellation) require explicit human approval (HITL) regardless of environment.
+
+### Rationale
+- Decoupling liveness from readiness ensures container orchestrators (e.g. Kubernetes, AWS ECS, GCP Cloud Run) do not flap or crash-loop when an external optional provider (such as live weather search) suffers temporary upstream latency.
+- Non-root container execution enforces least privilege and mitigates container escape vulnerabilities.
+- Startup configuration validation prevents runtime crashes during mid-workflow agent execution.
+
+### Alternatives Considered
+- *Permissive Startup (Deferred Error Handling)*: Rejected because missing database or LLM credentials would only be discovered after users attempt complex trip planning, leading to corrupted state.
+- *Root Container Execution*: Rejected due to standard enterprise container security policies.
+
 
 
 

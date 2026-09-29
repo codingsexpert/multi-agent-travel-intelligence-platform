@@ -124,38 +124,53 @@ def render_settings_page() -> None:
     st.markdown("---")
 
     # --------------------------------------------------------------------------
-    # 3. External Service Configurations (Secrets strictly protected)
+    # 3. System Health & Subsystem Readiness (8 Subsystems)
     # --------------------------------------------------------------------------
-    st.subheader("External Service Configurations")
-    st.caption("Presence indicators only; secret values are never displayed or transmitted.")
+    st.subheader("System Health & Subsystem Readiness")
+    st.caption("Real-time operational liveness and readiness probes across platform architecture. Secret values are never exposed.")
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("#### Supabase Database & Auth")
-        if settings.has_supabase_config:
-            st.success("✅ Configured")
-            st.caption(f"Host: `{settings.supabase_url}`")
-        else:
-            st.warning("⚠️ Not Configured")
-            st.caption("Using in-memory repository fallback (DEMO_MODE)")
+    # Top Health Status Banner
+    status_color = "#10B981" if health.overall_status == "HEALTHY" else ("#F59E0B" if health.overall_status == "DEGRADED" else "#EF4444")
+    st.markdown(
+        f"""
+        <div class="travel-card" style="border-left: 4px solid {status_color};">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <span style="font-size: 1.1rem; font-weight: 700; color: #F8FAFC;">OVERALL STATUS: {health.overall_status}</span>
+                    <span class="badge {'badge-live' if health.overall_status == 'HEALTHY' else ('badge-warning' if health.overall_status == 'DEGRADED' else 'badge-failed')}" style="margin-left: 10px;">
+                        {'READY' if health.readiness else 'UNAVAILABLE'}
+                    </span>
+                </div>
+                <div style="font-size: 0.85rem; color: #94A3B8;">
+                    <span>Liveness: <strong>{'ALIVE' if health.liveness else 'DOWN'}</strong></span> |
+                    <span>Readiness: <strong>{'PASS' if health.readiness else 'FAIL'}</strong></span>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    with c2:
-        st.markdown("#### LLM Reasoning Provider")
-        if settings.has_llm_config:
-            st.success("✅ Configured")
-            st.caption(f"Primary: `{settings.primary_llm_model}`")
-        else:
-            st.warning("⚠️ Not Configured")
-            st.caption("Using deterministic mock engines (DEMO_MODE)")
+    # 8 Subsystems Grid
+    sub_col1, sub_col2 = st.columns(2)
 
-    with c3:
-        st.markdown("#### LangSmith Observability")
-        if settings.has_langsmith_config:
-            st.success("✅ Configured")
-            st.caption(f"Project: `{settings.langsmith_project}`")
-        else:
-            st.warning("⚠️ Not Configured")
-            st.caption("Distributed tracing disabled")
+    subsystems_list = list(health.components.items())
+    for idx, (comp_key, comp_val) in enumerate(subsystems_list):
+        target_col = sub_col1 if idx % 2 == 0 else sub_col2
+        badge_cls = "badge-completed" if comp_val.status == "HEALTHY" else ("badge-warning" if comp_val.status in ("DEGRADED", "NOT_CONFIGURED") else "badge-failed")
+        with target_col:
+            st.markdown(
+                f"""
+                <div class="travel-card" style="margin-bottom: 12px; padding: 12px 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 600; color: #F1F5F9; font-size: 0.95rem;">{comp_val.name}</span>
+                        <span class="badge {badge_cls}">{comp_val.status}</span>
+                    </div>
+                    <div style="font-size: 0.8rem; color: #94A3B8; margin-top: 4px;">{comp_val.details or 'Active'}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     st.markdown("---")
 

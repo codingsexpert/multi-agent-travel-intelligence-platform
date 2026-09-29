@@ -717,17 +717,40 @@ This development plan breaks down the construction of the platform into **18 dis
 
 ---
 
-## Phase 18: Deployment & Interview Runbook
-- **Objective**: Finalize production deployment documentation, optional containerization, and technical interview talking points.
+## Phase 18: Production Deployment, CI/CD & Final Production Hardening (COMPLETED)
+- **Objective**: Complete final production hardening, startup configuration validation, 8-subsystem health probes (with liveness and readiness contracts), Streamlit production hardening, multi-stage non-root containerization, GitHub Actions CI/CD pipeline, and comprehensive deployment documentation.
 - **Implementation Tasks**:
-  1. Write comprehensive deployment guide (`DEPLOYMENT.md`) covering Streamlit Cloud, Supabase setup, and self-hosted options.
-  2. Provide optional `Dockerfile` and `docker-compose.yml` for containerized environments.
-  3. Write `INTERVIEW_TALKING_POINTS.md` highlighting architecture decisions, trade-offs, state graph design, and disaster recovery.
-  4. Final end-to-end demo verification script.
+  1. Startup Configuration Validator (`config/validator.py`):
+     - Validates environment variables, URL syntax, and mode-specific invariants (`DEMO_MODE=true` vs `DEMO_MODE=false`).
+     - Ensures `SUPABASE_URL` and `SUPABASE_ANON_KEY` are configured for production, along with at least one LLM API key.
+     - Redacts all secret values in configuration errors and summaries, returning structured error lists.
+  2. Subsystem Health Probes & Dual Probes (`services/health_service.py`):
+     - Comprehensive health checks across 8 subsystems: Application, Database, Authentication, LLM Providers, MCP Tool Servers, Web Search, RAG Knowledge Fabric, and LangSmith Observability.
+     - Structured states: `HEALTHY`, `DEGRADED`, `UNAVAILABLE`.
+     - Distinct `get_liveness_status()` and `get_readiness_status()` contracts ensuring non-critical service degradation does not trigger container restarts.
+  3. Streamlit Production Hardening (`.streamlit/config.toml`):
+     - Configured headless mode, port 8501, CORS disabled, XSRF protection enabled.
+     - Disabled usage telemetry and suppressed internal exception traces (`showErrorDetails = false`).
+  4. Multi-Stage Non-Root Containerization (`Dockerfile` & `.dockerignore`):
+     - Lightweight `python:3.11-slim` image running under unprivileged `appuser` (UID 10001).
+     - Native container healthcheck via Streamlit health probe.
+     - `.dockerignore` prevents `.env`, git artifacts, test caches, and development credentials from entering the image layer.
+  5. Automated CI/CD Pipeline (`.github/workflows/ci.yml`):
+     - GitHub Actions pipeline covering Python 3.11 setup, dependencies, secret scanning gate, configuration validation, 382+ test pytest suite, evaluation smoke tests, and health probe verification.
+  6. Production Readiness Test Suite (`tests/test_production_readiness.py`):
+     - 11 comprehensive automated tests covering configuration validation, secret redaction, liveness/readiness probes, 8 subsystems presence, Docker/Streamlit configuration presence, CI workflow validity, tenant isolation, and end-to-end planning/replanning/HITL smoke test.
+  7. Production Deployment Guide & Readiness Scorecard:
+     - `DEPLOYMENT.md`: Step-by-step production runbook for Streamlit Community Cloud and containerized cloud platforms.
+     - `PRODUCTION_READINESS.md`: Production readiness assessment across architecture, security, testing, evaluation, performance, cost, observability, and known limitations.
 - **Files / Components**:
-  - `DEPLOYMENT.md`, `INTERVIEW_TALKING_POINTS.md`
-  - Optional `Dockerfile`, `docker-compose.yml`
+  - `config/validator.py`, `config/__init__.py`
+  - `services/health_service.py`, `app/pages/settings.py`
+  - `.streamlit/config.toml`, `Dockerfile`, `.dockerignore`
+  - `.github/workflows/ci.yml`, `DEPLOYMENT.md`, `PRODUCTION_READINESS.md`
+  - `tests/test_production_readiness.py`
 - **Testing Requirements**:
-  - Perform clean-slate setup on a fresh environment following `DEPLOYMENT.md`.
+  - 11/11 production readiness tests passing in `tests/test_production_readiness.py`.
+  - Full test suite passing across all 18 phases (382+ tests).
 - **Expected Output**:
-  - Production-ready, fully documented repository with interview demo scripts.
+  - Fully hardened, production-prepared multi-agent travel intelligence system ready for immediate enterprise deployment.
+
